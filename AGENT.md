@@ -78,6 +78,16 @@ CREATE TABLE IF NOT EXISTS inventory (
 );
 ```
 
+### Testing inventory DB
+
+- No API keys required. A venv is optional (stdlib `sqlite3` only).
+- Default file is **`inventory.db`** in the process working directory (gitignored). Override with **`INVENTORY_DB`** or **`INVENTORY_DB_PATH`** (same meaning) for a fixed path on the Pi (e.g. under `/var/lib/...`).
+- **v1:** each confirm is a new `INSERT`; duplicate `scryfall_id` rows are allowed (no unique constraint). Upsert/increment can be added later.
+
+  `python3 db.py --init` — creates the file and `inventory` table if needed; prints the resolved path.
+
+  `python3 db.py --list` — prints a JSON array of recent rows (newest first, default limit 50).
+
 ## User Flow
 1. User presses physical **scan button** (GPIO)
 2. `camera.py` captures a JPEG
