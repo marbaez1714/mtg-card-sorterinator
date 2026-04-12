@@ -1,0 +1,10 @@
+# Run these once on the Raspberry Pi (not via pip):
+#
+#   sudo apt update
+#   sudo apt install -y python3-picamera2 python3-libcamera
+#
+# picamera2 on PyPI is a stub — the real library ships with Raspberry Pi OS
+# and links against system libcamera. Do not pip install it.
+#
+# After the apt install, also install the pip packages:
+#   pip install -r requirements.txt
