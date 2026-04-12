@@ -54,6 +54,16 @@ mtg-scanner/
 - Returns: price (USD/foil), image URI, set code, legality, collector number
 - Respect Scryfall's request that clients wait 50–100ms between requests
 
+### Testing Scryfall lookup
+
+- Activate your project venv if you use one (see **Python venv** under Development Notes). No API key is required.
+- Fuzzy lookup uses only the **card name** for now. `set_name` from [`claude_id.py`](claude_id.py) is not passed to Scryfall until we resolve display set names to set codes (e.g. a separate sets endpoint).
+- Optional: `SCRYFALL_MIN_INTERVAL_MS` (default `75`) sets the minimum gap between outbound Scryfall requests in milliseconds.
+
+  `python3 scryfall.py "Lightning Bolt"`
+
+- Prints normalized JSON (`id`, `name`, `set_code`, `collector_number`, `price_usd`, `price_usd_foil`, `image_uri`, `legalities`) or an error on stderr.
+
 ## Database Schema
 ```sql
 CREATE TABLE IF NOT EXISTS inventory (
