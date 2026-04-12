@@ -39,6 +39,7 @@ mtg-scanner/
 
 ### Testing Claude ID
 
+- Activate your project venv first if you use one (see **Python venv** under Development Notes).
 - Set `ANTHROPIC_API_KEY` in `.env` (or export it in the shell). Optional: `ANTHROPIC_MODEL` overrides the default Sonnet model id.
 - With any JPEG of a card (for example from the Pi: `python3 test_camera.py --save` then copy `/tmp/card_test.jpg`):
 
@@ -82,6 +83,13 @@ CREATE TABLE IF NOT EXISTS inventory (
 - Use `RPi.GPIO` or `gpiozero` — prefer `gpiozero` for cleaner code
 
 ## Development Notes
+- **Python venv (required if `pip` says “externally managed”):** macOS Homebrew / Xcode Python and current Raspberry Pi OS use PEP 668, so you must not install into the system interpreter. From the project root:
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
+  Use `python3` / `pip` only while the venv is activated (or run tools as `.venv/bin/python`). On Windows: `.venv\Scripts\activate`.
 - **Dev machine:** All development happens on a separate computer. The Pi is the deploy target only.
 - **No desktop on Pi:** Do not assume X11, Wayland, or a browser is available.
 - **Testing camera locally:** Mock `camera.py` with a static test JPEG when not on Pi hardware.
