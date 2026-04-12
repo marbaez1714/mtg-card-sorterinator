@@ -8,6 +8,8 @@ A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards usi
 - **Camera:** Raspberry Pi Camera Module 3 (standard, not wide-angle), accessed via Picamera2
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
 
+**Scan quality (accuracy):** Fill most of the frame with the card, use diffuse light (avoid specular glare on the title), and keep the name line in focus. Optional Picamera2 env vars (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** or **`CAMERA_STILL_SIZE`** as `WxH` for still resolution (default `2304x1296`; higher can help text but uses more RAM on a 2GB Pi), **`CAMERA_SETTLE_S`** seconds after start before capture (default `2`), **`CAMERA_AF_RANGE`** `0` Normal / `1` Macro (default, desk distance) / `2` Full if focus hunts at your working distance.
+
 ## Project Structure
 ```
 mtg-scanner/
@@ -28,13 +30,8 @@ mtg-scanner/
 
 ### Claude Vision API
 - Model: `claude-sonnet-4-20250514`
-- Purpose: Identify card name and set from a JPEG image
-- Prompt must instruct the model to return **JSON only**, no preamble:
-  ```
-  You are an MTG card identifier. Given an image of a Magic: The Gathering card,
-  return ONLY a JSON object: {"name": "exact card name", "set_name": "set name or null"}.
-  No other text.
-  ```
+- Purpose: Identify card name and set from a JPEG image (reads the **printed title line**; `set_name` only when clearly printed, else `null`).
+- Implementation uses a short **system** message plus a **user** prompt and image; the model must return **only** a JSON object: `{"name": "...", "set_name": ...}`. See [`claude_id.py`](claude_id.py) for the exact wording (tuned to reduce wrong-card guesses from memory or artwork).
 - API key stored in `.env` as `ANTHROPIC_API_KEY`
 
 ### Testing Claude ID

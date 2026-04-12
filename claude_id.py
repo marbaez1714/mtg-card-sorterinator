@@ -14,11 +14,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _DEFAULT_MODEL = "claude-sonnet-4-20250514"
-_MAX_TOKENS = 512
+_MAX_TOKENS = 1024
 
-_PROMPT = """You are an MTG card identifier. Given an image of a Magic: The Gathering card,
-return ONLY a JSON object: {"name": "exact card name", "set_name": "set name or null"}.
-No other text."""
+_SYSTEM = (
+    "You identify Magic: The Gathering cards from photos. "
+    "Be literal: copy the printed English title from the card frame, not a similar card from memory. "
+    "Output must be a single JSON object only."
+)
+
+_PROMPT = """Look at the Magic: The Gathering card in the image.
+
+Rules for "name":
+- Read the main card title printed along the top of the card face (the name line). Use that exact English text, including punctuation (e.g. commas, apostrophes) as printed.
+- If only one face is visible on a double-faced card, use that face's printed name.
+- Do not substitute a different card that "looks similar". If glare, sleeves, blur, or angle make the title ambiguous, transcribe the letters you can see literally; do not invent a clean guess of a different card.
+
+Rules for "set_name":
+- Only fill this if you can read an actual printed set name or expansion line on this card (not from artwork alone). Otherwise use null.
+- If unsure, use null.
+
+Return ONLY a JSON object (no markdown, no commentary):
+{"name": "exact printed card name", "set_name": "printed set name or null"}"""
 
 
 class CardIdentificationError(Exception):
@@ -117,6 +133,7 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
         response = client.messages.create(
             model=_model(),
             max_tokens=_MAX_TOKENS,
+            system=_SYSTEM,
             messages=[
                 {
                     "role": "user",
