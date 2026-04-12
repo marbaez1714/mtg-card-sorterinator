@@ -60,9 +60,11 @@ class _RealCardCamera:
 
     def start(self) -> None:
         self._cam = Picamera2()
+        # JPEG quality is not a libcamera pipeline control on all stacks; use
+        # Picamera2's encoder options (see picamera2#431).
+        self._cam.options["quality"] = self._jpeg_quality
         config = self._cam.create_still_configuration(
             main={"size": (2304, 1296), "format": "RGB888"},
-            controls={"JpegQuality": self._jpeg_quality},
             buffer_count=1,  # conserve RAM on RPi4 2GB
         )
         self._cam.configure(config)
