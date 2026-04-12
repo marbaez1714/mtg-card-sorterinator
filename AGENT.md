@@ -1,12 +1,11 @@
 # MTG Card Scanner — Claude Code Context
 
 ## Project Overview
-A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards using the Claude Vision API, fetches card data from Scryfall, and saves results to a local SQLite inventory database. Displayed via pygame on a small DSI screen — no browser, no desktop.
+A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards using the Claude Vision API, fetches card data from Scryfall, and saves results to a local SQLite inventory database. **Headless for now** (no attached screen): feedback via logs, Flask, or the serial/SSH session — no browser, no desktop assumed on the Pi.
 
 ## Hardware
 - **Pi:** Raspberry Pi 4 (2GB)
 - **Camera:** Raspberry Pi Camera Module 3 (standard, not wide-angle), accessed via Picamera2
-- **Display:** Waveshare 4" DSI display, pygame renders direct to framebuffer
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
 
 ## Project Structure
@@ -17,12 +16,13 @@ mtg-scanner/
 ├── claude_id.py     # Claude Vision API call — returns card name + set
 ├── scryfall.py      # Scryfall API wrapper — fetches card data and pricing
 ├── db.py            # SQLite CRUD — inventory read/write
-├── display.py       # Pygame framebuffer renderer — draws UI to DSI screen
 ├── gpio.py          # GPIO button input handler
 ├── inventory.db     # Auto-created SQLite file (gitignore this)
 ├── .env             # API keys (gitignore this)
 └── requirements.txt
 ```
+
+*(Deferred: optional `display.py` + DSI framebuffer UI — not in scope until re-enabled.)*
 
 ## Key APIs
 
@@ -63,20 +63,9 @@ CREATE TABLE IF NOT EXISTS inventory (
 2. `camera.py` captures a JPEG
 3. `claude_id.py` sends image to Claude API → returns `{"name": ..., "set_name": ...}`
 4. `scryfall.py` does a fuzzy lookup → returns price, art URL, legality
-5. `display.py` renders card name, set, price, and art on the pygame screen
+5. **Headless:** app surfaces the match (e.g. logging, Flask JSON, or stdout) so the operator can decide
 6. User presses **confirm button** → saved to SQLite via `db.py`
 7. User presses **rescan button** → discard and restart flow
-
-## Display
-- Pygame renders directly to `/dev/fb0` (framebuffer), no X11/Wayland/Chromium
-- Target resolution: 800×480 (Waveshare 4" DSI)
-- Keep UI minimal: card art thumbnail, name, set, price, and button prompts
-- Use `pygame.display.init()` with the framebuffer driver:
-  ```python
-  import os
-  os.environ["SDL_VIDEODRIVER"] = "fbcon"
-  os.environ["SDL_FBDEV"] = "/dev/fb0"
-  ```
 
 ## GPIO Button Mapping
 - Define pin numbers in `.env` or a `config.py` — do not hardcode
@@ -86,7 +75,6 @@ CREATE TABLE IF NOT EXISTS inventory (
 ## Development Notes
 - **Dev machine:** All development happens on a separate computer. The Pi is the deploy target only.
 - **No desktop on Pi:** Do not assume X11, Wayland, or a browser is available.
-- **Testing display locally:** When running on a non-Pi machine, fall back to a standard pygame window (`SDL_VIDEODRIVER=` unset) so UI can be developed without hardware.
 - **Testing camera locally:** Mock `camera.py` with a static test JPEG when not on Pi hardware.
 - **Deployment:** rsync or `scp` to Pi, run via a systemd service on boot.
 
@@ -105,12 +93,10 @@ picamera2
 anthropic
 requests
 gpiozero
-pygame
 python-dotenv
 ```
 
 ## What To Avoid
 - Do not use Chromium, a browser, or any web-based display
-- Do not use SPI displays or I2C displays for the main screen
 - Do not hardcode GPIO pin numbers or API keys
 - Do not assume the Pi has internet access during dev/test — mock API calls where needed
