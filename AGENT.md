@@ -37,6 +37,15 @@ mtg-scanner/
   ```
 - API key stored in `.env` as `ANTHROPIC_API_KEY`
 
+### Testing Claude ID
+
+- Set `ANTHROPIC_API_KEY` in `.env` (or export it in the shell). Optional: `ANTHROPIC_MODEL` overrides the default Sonnet model id.
+- With any JPEG of a card (for example from the Pi: `python3 test_camera.py --save` then copy `/tmp/card_test.jpg`):
+
+  `python3 claude_id.py /path/to/card.jpg`
+
+- Prints JSON with `name` and `set_name` to stdout, or a clear error message on stderr.
+
 ### Scryfall API
 - Base URL: `https://api.scryfall.com`
 - No authentication required
