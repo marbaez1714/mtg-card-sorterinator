@@ -115,6 +115,25 @@ CREATE TABLE IF NOT EXISTS inventory (
 - **Testing camera locally:** Mock `camera.py` with a static test JPEG when not on Pi hardware.
 - **Deployment:** rsync or `scp` to Pi, run via a systemd service on boot.
 
+### Running the Flask app (headless API)
+
+- **v1 has no authentication**; only run on a network you trust (e.g. home LAN). Listens on `0.0.0.0` so other devices can reach the Pi.
+- Activate venv, set **`ANTHROPIC_API_KEY`** (and optional **`MOCK_CAMERA=1`** on a dev machine without a camera). Optional: **`FLASK_PORT`** (default `5000`), **`FLASK_DEBUG=1`** for Flask debug mode (not for production).
+
+  `python3 app.py`
+
+- **Endpoints:** `GET /api/health` — liveness. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
+
+- **Example curl** (from another machine, replace host):
+
+  ```bash
+  curl -sS http://raspberrypi.local:5000/api/health
+  curl -sS -X POST http://raspberrypi.local:5000/api/scan
+  curl -sS -X POST http://raspberrypi.local:5000/api/confirm -H 'Content-Type: application/json' -d '{"foil":false,"quantity":1}'
+  ```
+
+- A stub JPEG from `MOCK_CAMERA=1` is not a real card image; use a Pi capture or a real JPEG to test vision accuracy.
+
 ## Environment Variables (.env)
 ```
 ANTHROPIC_API_KEY=your_key_here
