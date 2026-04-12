@@ -55,10 +55,31 @@ def _message_text(response: Any) -> str:
 
 
 def _parse_identification_json(raw: str) -> dict[str, Any]:
+    """
+    Parse the first JSON object from model text. Handles prose before/after the object
+    and empty results after markdown fence stripping (common with stub/invalid images).
+    """
+    s = _unwrap_json_text(raw).strip()
+    if not s:
+        preview = (raw or "")[:400].replace("\n", "\\n")
+        raise CardIdentificationError(
+            "Model returned no usable text for JSON (empty after stripping). "
+            f"Preview: {preview!r}"
+        )
+    start = s.find("{")
+    if start == -1:
+        raise CardIdentificationError(
+            "Model output contained no JSON object starting with '{'. "
+            f"Preview: {s[:400]!r}"
+        )
+    decoder = json.JSONDecoder()
     try:
-        data = json.loads(_unwrap_json_text(raw))
+        data, _end = decoder.raw_decode(s, start)
     except json.JSONDecodeError as e:
-        raise CardIdentificationError(f"Model did not return valid JSON: {e}") from e
+        snippet = s[start : start + 220]
+        raise CardIdentificationError(
+            f"Model did not return valid JSON: {e}. Snippet: {snippet!r}"
+        ) from e
     if not isinstance(data, dict):
         raise CardIdentificationError("JSON root must be an object")
 
