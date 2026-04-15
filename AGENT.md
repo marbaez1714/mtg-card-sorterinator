@@ -120,12 +120,13 @@ CREATE TABLE IF NOT EXISTS inventory (
 
   `python3 app.py`
 
-- **Endpoints:** `GET /api/health` — liveness. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
+- **Endpoints:** `GET /api/health` — liveness. `POST /api/identify` — capture → Claude only; returns `{ "vision": { "name", "set_name", "set_code", "collector_number" } }` and does **not** call Scryfall or change **pending**. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
 
 - **Example curl** (from another machine, replace host):
 
   ```bash
   curl -sS http://raspberrypi.local:5000/api/health
+  curl -sS -X POST http://raspberrypi.local:5000/api/identify
   curl -sS -X POST http://raspberrypi.local:5000/api/scan
   curl -sS -X POST http://raspberrypi.local:5000/api/confirm -H 'Content-Type: application/json' -d '{"foil":false,"quantity":1}'
   ```

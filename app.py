@@ -24,14 +24,18 @@ _lock = threading.Lock()
 _pending: dict[str, Any] | None = None
 
 
-def _run_scan_pipeline() -> tuple[dict[str, Any], dict[str, Any]]:
+def _capture_and_identify() -> dict[str, Any]:
     cam = CardCamera()
     try:
         cam.start()
         jpeg = cam.capture_jpeg()
     finally:
         cam.stop()
-    vision = identify_card_from_jpeg(jpeg)
+    return identify_card_from_jpeg(jpeg)
+
+
+def _run_scan_pipeline() -> tuple[dict[str, Any], dict[str, Any]]:
+    vision = _capture_and_identify()
     sf = lookup_card_from_vision(vision)
     return vision, sf
 
@@ -39,6 +43,18 @@ def _run_scan_pipeline() -> tuple[dict[str, Any], dict[str, Any]]:
 @app.get("/api/health")
 def api_health() -> Any:
     return jsonify(ok=True)
+
+
+@app.post("/api/identify")
+def api_identify() -> Any:
+    """Capture → Claude only. Does not call Scryfall and does not change pending state."""
+    try:
+        vision = _capture_and_identify()
+    except CardIdentificationError as e:
+        return jsonify(error=str(e)), 502
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+    return jsonify(vision=vision)
 
 
 @app.post("/api/scan")
