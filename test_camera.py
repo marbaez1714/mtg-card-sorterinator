@@ -7,11 +7,23 @@ Usage:
     MOCK_CAMERA=1 python3 test_camera.py  # force mock path
     python3 test_camera.py --save       # save JPEG to /tmp/card_test.jpg
                                         # then: scp pi@raspberrypi.local:/tmp/card_test.jpg .
+                                        # Prints JPEG width x height (needs Pillow).
 """
+import io
 import sys
 import time
 
 from camera import CardCamera
+
+
+def _print_jpeg_size(label: str, data: bytes) -> None:
+    try:
+        from PIL import Image
+
+        im = Image.open(io.BytesIO(data))
+        print(f"  {label} JPEG size: {im.size[0]} x {im.size[1]} px")
+    except Exception:
+        print(f"  {label} (could not read JPEG dimensions — pip install Pillow)")
 
 
 def main():
@@ -29,6 +41,7 @@ def main():
         data = cam.capture_jpeg()
         elapsed = time.monotonic() - t0
         print(f"  {len(data):,} bytes in {elapsed:.2f}s")
+        _print_jpeg_size("First", data)
 
         if len(data) < 500:
             print("WARN: suspiciously small JPEG — AF or capture may have failed")
@@ -45,6 +58,7 @@ def main():
         data2 = cam.capture_jpeg()
         elapsed2 = time.monotonic() - t0
         print(f"  {len(data2):,} bytes in {elapsed2:.2f}s")
+        _print_jpeg_size("Second", data2)
 
         print("PASS")
 

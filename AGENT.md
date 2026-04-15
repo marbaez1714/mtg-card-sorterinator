@@ -8,7 +8,7 @@ A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards usi
 - **Camera:** Raspberry Pi Camera Module 3 (standard, not wide-angle), accessed via Picamera2
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
 
-**Scan quality (accuracy):** Fill most of the frame with the card, use diffuse light (avoid specular glare on the title), and keep the name line in focus. Optional Picamera2 env vars (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** or **`CAMERA_STILL_SIZE`** as `WxH` for still resolution (default `2304x1296`; higher can help text but uses more RAM on a 2GB Pi), **`CAMERA_SETTLE_S`** seconds after start before capture (default `2`), **`CAMERA_AF_RANGE`** `0` Normal / `1` Macro (default, desk distance) / `2` Full if focus hunts at your working distance.
+**Scan quality (accuracy):** Move the camera so the **card fills most of the frame** (if the saved JPEG shows a tiny card on a big desk, OCR will struggle). Use diffuse light (avoid glare on the title) and keep the name line in focus. Optional Picamera2 env vars (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** / **`CAMERA_STILL_SIZE`** as `WxH` (default still is **`3280x2464`**; lower to e.g. `2304x1296` if the Pi runs out of memory), **`CAMERA_SETTLE_S`**, **`CAMERA_AF_RANGE`**. For Claude only, **`MTG_CENTER_CROP_RATIO`** (e.g. `0.55`) in [`claude_id.py`](claude_id.py) crops to the center of the image so a **centered** card appears larger before vision (does not help if the card is off-center).
 
 ## Project Structure
 ```

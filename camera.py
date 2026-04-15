@@ -53,7 +53,9 @@ def _still_size() -> tuple[int, int]:
                 return (w, h)
         except ValueError:
             pass
-    return (2304, 1296)
+    # Default ~8MP 4:3 — more pixels on the title than 2304x1296 when the card is far away.
+    # On Pi 4 2GB, if you see OOM, set MTG_STILL_SIZE=2304x1296 (or lower).
+    return (3280, 2464)
 
 
 def _af_range() -> int:

@@ -57,17 +57,39 @@ def _temperature() -> float:
     return max(0.0, min(1.0, t))
 
 
+def _center_crop_ratio() -> float | None:
+    """If set (0,1], keep only the center ``ratio`` of width and height (zooms a centered card)."""
+    raw = os.getenv("MTG_CENTER_CROP_RATIO", "").strip()
+    if not raw:
+        return None
+    try:
+        r = float(raw)
+    except ValueError:
+        return None
+    if r <= 0 or r > 1.0:
+        return None
+    return r
+
+
 def _prepare_jpeg_for_vision(jpeg_bytes: bytes) -> bytes:
     """
-    Apply EXIF orientation (fixes sideways photos) and optional manual rotation.
+    Optional image prep before Claude: EXIF orientation, manual rotation, center crop.
 
-    Set ``CLAUDE_AUTO_ORIENT=0`` to skip EXIF. Set ``CLAUDE_JPEG_ROTATE`` to ``90``,
-    ``180``, or ``270`` to rotate the image clockwise that many degrees after EXIF fix
-    (useful if the Pi camera is mounted sideways and JPEGs have no EXIF).
+    - ``CLAUDE_AUTO_ORIENT=0`` — skip EXIF transpose.
+    - ``CLAUDE_JPEG_ROTATE`` — ``90`` / ``180`` / ``270`` (clockwise) after EXIF.
+    - ``MTG_CENTER_CROP_RATIO`` — e.g. ``0.55`` keeps the middle 55 percent of width and height
+      (discard desk around a centered card so the card is larger in frame for OCR).
+    - ``CLAUDE_JPEG_QUALITY`` — JPEG quality when re-encoding (default ``92``).
     """
     auto = os.getenv("CLAUDE_AUTO_ORIENT", "1").strip() != "0"
     rot_s = os.getenv("CLAUDE_JPEG_ROTATE", "0").strip()
-    if not auto and rot_s not in ("90", "180", "270"):
+    crop_r = _center_crop_ratio()
+    need_pillow = (
+        auto
+        or rot_s in ("90", "180", "270")
+        or (crop_r is not None and crop_r < 1.0)
+    )
+    if not need_pillow:
         return jpeg_bytes
     try:
         from PIL import Image, ImageOps
@@ -85,6 +107,13 @@ def _prepare_jpeg_for_vision(jpeg_bytes: bytes) -> bytes:
         if rot_s in ("90", "180", "270"):
             resample = getattr(Image, "Resampling", Image).BICUBIC
             im = im.rotate(-int(rot_s), expand=True, resample=resample, fillcolor=(255, 255, 255))
+        if crop_r is not None and crop_r < 1.0:
+            w, h = im.size
+            nw = max(1, int(w * crop_r))
+            nh = max(1, int(h * crop_r))
+            left = (w - nw) // 2
+            top = (h - nh) // 2
+            im = im.crop((left, top, left + nw, top + nh))
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")
         out = io.BytesIO()
