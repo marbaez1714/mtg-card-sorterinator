@@ -81,7 +81,7 @@ def _lazy_device() -> Any:
             gpio_rst = int(os.getenv("OLED_GPIO_RST", "25").strip())
             bus_hz = int(os.getenv("OLED_SPI_HZ", "8000000").strip())
             _oled_debug(
-                f"spi port={spi_port} ce=device{spi_dev} DC=GPIO{gpio_dc} RST=GPIO{gpio_rst} "
+                f"spi spidev{spi_port}.{spi_dev} CE{spi_dev} DC=GPIO{gpio_dc} RST=GPIO{gpio_rst} "
                 f"{bus_hz}Hz driver={driver} rotate={rotate}"
             )
             serial = spi(
