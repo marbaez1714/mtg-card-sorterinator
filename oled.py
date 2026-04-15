@@ -188,10 +188,12 @@ def _draw(lines: list[str]) -> None:
         if hasattr(dev, "contrast"):
             dev.contrast(0xFF)
         font = ImageFont.load_default()
+        # Black on white matches --diag (high contrast). White-on-black can look “off” on some modules.
         with canvas(dev) as draw:
+            draw.rectangle((0, 0, 127, 63), fill="white")
             y = 0
             for line in lines[:6]:
-                draw.text((0, y), line[:32], font=font, fill="white")
+                draw.text((0, y), line[:32], font=font, fill="black")
                 y += 11
         if hasattr(dev, "show"):
             dev.show()
@@ -474,15 +476,36 @@ def main() -> None:
             "Optional: OLED_DEBUG=1  OLED_SPI_HZ=1000000  OLED_DRIVER=sh1106\n"
             "  OLED_GPIO_CS=<BCM> if CS is not on CE0/CE1  OLED_DIAG_FULL=1  OLED_RESET_RELEASE_S=0.15\n"
             "  OLED_PROBE_INVERT=1 python3 oled.py --probe  (display invert test)\n"
-            "  OLED_PROBE_HOLD_S=5  (default; seconds to keep image before GPIO cleanup)",
+            "  OLED_PROBE_HOLD_S=5  (default; seconds to keep image before GPIO cleanup)\n"
+            "  OLED_TEST_HOLD_S=5   (default for --test; seconds before exit)",
             file=sys.stderr,
         )
         sys.exit(2)
     if not _oled_enabled():
         print("Set OLED_ENABLED=1 for hardware test.", file=sys.stderr)
         sys.exit(2)
+
+    import time
+
+    dev = _lazy_device()
+    if dev is None:
+        print(
+            "[OLED] --test: luma init failed (no device). See [OLED] init failed lines above, "
+            "or run: OLED_DEBUG=1 OLED_ENABLED=1 python3 oled.py --diag",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     oled_show_lines(["Hello world"])
-    print("Wrote 'Hello world' to OLED (if wired correctly).")
+    hold = float(os.getenv("OLED_TEST_HOLD_S", "5").strip())
+    if hold > 0:
+        print(
+            f"[OLED] --test: holding {hold}s so you can read the screen "
+            f"(same idea as --probe; set OLED_TEST_HOLD_S=0 for instant exit).",
+            flush=True,
+        )
+        time.sleep(hold)
+    print("Wrote 'Hello world' to OLED (if wired correctly).", flush=True)
 
 
 if __name__ == "__main__":
