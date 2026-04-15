@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -94,22 +95,18 @@ def _normalize_card(card: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def lookup_card_by_fuzzy_name(name: str) -> dict[str, Any]:
-    """
-    GET /cards/named?fuzzy=... — returns a normalized dict for inventory / JSON APIs.
-
-    Throttles consecutive calls (SCRYFALL_MIN_INTERVAL_MS, default 75).
-    """
-    q = (name or "").strip()
-    if not q:
-        raise ScryfallLookupError("Empty card name")
-
+def _request_scryfall_card(
+    path: str,
+    params: dict[str, str] | None = None,
+    *,
+    not_found_message: str,
+) -> dict[str, Any]:
     _throttle()
-    url = f"{_BASE}/cards/named"
+    url = f"{_BASE}{path}"
     try:
         r = requests.get(
             url,
-            params={"fuzzy": q},
+            params=params or {},
             headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
             timeout=_TIMEOUT,
         )
@@ -120,7 +117,7 @@ def lookup_card_by_fuzzy_name(name: str) -> dict[str, Any]:
     _mark_request_done()
 
     if r.status_code == 404:
-        raise ScryfallLookupError("No card matched fuzzy name")
+        raise ScryfallLookupError(not_found_message)
     if r.status_code == 429:
         raise ScryfallLookupError("Rate limited by Scryfall (429)")
     if not r.ok:
@@ -134,6 +131,59 @@ def lookup_card_by_fuzzy_name(name: str) -> dict[str, Any]:
         raise ScryfallLookupError("Unexpected response shape")
 
     return _normalize_card(card)
+
+
+def lookup_card_by_fuzzy_name(name: str) -> dict[str, Any]:
+    """
+    GET /cards/named?fuzzy=... — returns a normalized dict for inventory / JSON APIs.
+
+    Throttles consecutive calls (SCRYFALL_MIN_INTERVAL_MS, default 75).
+    """
+    q = (name or "").strip()
+    if not q:
+        raise ScryfallLookupError("Empty card name")
+
+    return _request_scryfall_card(
+        "/cards/named",
+        {"fuzzy": q},
+        not_found_message="No card matched fuzzy name",
+    )
+
+
+def lookup_card_by_set_and_collector(set_code: str, collector_number: str) -> dict[str, Any]:
+    """
+    GET /cards/{set}/{collector_number} — exact print when set and collector are known.
+
+    Throttles like other Scryfall calls.
+    """
+    sc = (set_code or "").strip().lower()
+    cn = (collector_number or "").strip()
+    if not sc or not cn:
+        raise ScryfallLookupError("set_code and collector_number are required")
+    path = f"/cards/{quote(sc, safe='')}/{quote(cn, safe='')}"
+    return _request_scryfall_card(
+        path,
+        None,
+        not_found_message="No card matched set and collector",
+    )
+
+
+def lookup_card_from_vision(vision: dict[str, Any]) -> dict[str, Any]:
+    """
+    Prefer exact ``/cards/{set}/{collector}`` when vision includes both; else fuzzy name.
+    """
+    name = vision.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ScryfallLookupError("vision result missing name")
+
+    sc = vision.get("set_code")
+    cn = vision.get("collector_number")
+    if isinstance(sc, str) and isinstance(cn, str) and sc.strip() and cn.strip():
+        try:
+            return lookup_card_by_set_and_collector(sc, cn)
+        except ScryfallLookupError:
+            pass
+    return lookup_card_by_fuzzy_name(name.strip())
 
 
 def main() -> None:

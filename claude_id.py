@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -33,8 +34,12 @@ Rules for "set_name":
 - Only fill this if you can read an actual printed set name or expansion line on this card (not from artwork alone). Otherwise use null.
 - If unsure, use null.
 
+Rules for "set_code" and "collector_number" (strongly improves database matching when legible):
+- Many cards print a small set code and collector number on the type line (often like "DMU · 123" or set symbol + number). If you can read a **3–5 character lowercase set code** (letters/numbers only, e.g. `dmu`, `neo`, `10e`) and the **collector number** (digits, sometimes with a letter suffix like `12a`), include them. Otherwise use null for each.
+- Never guess these from memory; only transcribe what is visible on this print.
+
 Return ONLY a JSON object (no markdown, no commentary):
-{"name": "exact printed card name", "set_name": "printed set name or null"}"""
+{"name": "exact printed card name", "set_name": "printed set name or null", "set_code": "lowercase code or null", "collector_number": "printed collector or null"}"""
 
 
 class CardIdentificationError(Exception):
@@ -110,12 +115,36 @@ def _parse_identification_json(raw: str) -> dict[str, Any]:
     if sn == "":
         sn = None
 
-    return {"name": name.strip(), "set_name": sn}
+    set_code = data.get("set_code", None)
+    if set_code is not None and not isinstance(set_code, str):
+        raise CardIdentificationError('Invalid "set_code" (expected string or null)')
+    sc = set_code.strip().lower() if isinstance(set_code, str) else None
+    if sc == "":
+        sc = None
+    if sc is not None and not re.fullmatch(r"[a-z0-9]{2,8}", sc):
+        sc = None
+
+    coll = data.get("collector_number", None)
+    if coll is not None and not isinstance(coll, str):
+        raise CardIdentificationError('Invalid "collector_number" (expected string or null)')
+    cn = coll.strip() if isinstance(coll, str) else None
+    if cn == "":
+        cn = None
+    if cn is not None:
+        if len(cn) > 14 or not re.fullmatch(r"[A-Za-z0-9*]+", cn):
+            cn = None
+        else:
+            cn = cn.lower()
+
+    return {"name": name.strip(), "set_name": sn, "set_code": sc, "collector_number": cn}
 
 
 def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
     """
-    Send JPEG bytes to Claude Vision; return {"name": str, "set_name": str | None}.
+    Send JPEG bytes to Claude Vision.
+
+    Returns ``name``, ``set_name``, and when readable on the frame ``set_code`` /
+    ``collector_number`` for exact Scryfall lookup.
 
     Requires ANTHROPIC_API_KEY. Optional ANTHROPIC_MODEL (default Sonnet per AGENT.md).
     """

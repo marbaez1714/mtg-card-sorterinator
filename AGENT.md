@@ -30,8 +30,8 @@ mtg-scanner/
 
 ### Claude Vision API
 - Model: `claude-sonnet-4-20250514`
-- Purpose: Identify card name and set from a JPEG image (reads the **printed title line**; `set_name` only when clearly printed, else `null`).
-- Implementation uses a short **system** message plus a **user** prompt and image; the model must return **only** a JSON object: `{"name": "...", "set_name": ...}`. See [`claude_id.py`](claude_id.py) for the exact wording (tuned to reduce wrong-card guesses from memory or artwork).
+- Purpose: Identify card name and set from a JPEG image (reads the **printed title line**; `set_name` only when clearly printed, else `null`). When the **type-line set code** and **collector number** are legible, the model also returns **`set_code`** and **`collector_number`** so Scryfall can use an exact card URL instead of fuzzy name search.
+- Implementation uses a short **system** message plus a **user** prompt and image; the model must return **only** a JSON object. See [`claude_id.py`](claude_id.py) for the exact keys and wording.
 - API key stored in `.env` as `ANTHROPIC_API_KEY`
 
 ### Testing Claude ID
@@ -48,6 +48,7 @@ mtg-scanner/
 - Base URL: `https://api.scryfall.com`
 - No authentication required
 - Fuzzy card lookup: `GET /cards/named?fuzzy={card_name}`
+- When [`claude_id.py`](claude_id.py) returns readable **`set_code`** and **`collector_number`** from the type line, [`scryfall.lookup_card_from_vision`](scryfall.py) uses **`GET /cards/{set}/{collector}`** first (exact print), then falls back to fuzzy name if that fails—this greatly reduces wrong reprints.
 - Returns: price (USD/foil), image URI, set code, legality, collector number
 - Respect Scryfall's request that clients wait 50–100ms between requests
 

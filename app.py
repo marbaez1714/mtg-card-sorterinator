@@ -14,7 +14,7 @@ load_dotenv()
 from camera import CardCamera
 from claude_id import CardIdentificationError, identify_card_from_jpeg
 from db import InventoryDBError, add_inventory_item, init_db, list_inventory_items
-from scryfall import ScryfallLookupError, lookup_card_by_fuzzy_name
+from scryfall import ScryfallLookupError, lookup_card_from_vision
 
 init_db()
 
@@ -32,7 +32,7 @@ def _run_scan_pipeline() -> tuple[dict[str, Any], dict[str, Any]]:
     finally:
         cam.stop()
     vision = identify_card_from_jpeg(jpeg)
-    sf = lookup_card_by_fuzzy_name(vision["name"])
+    sf = lookup_card_from_vision(vision)
     return vision, sf
 
 
