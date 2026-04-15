@@ -40,11 +40,31 @@ def _oled_cfg_fingerprint() -> str:
         "OLED_SPI_DEVICE",
         "OLED_GPIO_DC",
         "OLED_GPIO_RST",
+        "OLED_GPIO_CS",
         "OLED_SPI_HZ",
         "OLED_DRIVER",
         "OLED_ROTATE",
+        "OLED_RESET_HOLD_S",
+        "OLED_RESET_RELEASE_S",
     )
     return "|".join(f"{k}={os.getenv(k, '')}" for k in keys)
+
+
+def _env_optional_int(key: str) -> int | None:
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return None
+    return int(str(raw).strip(), 0)
+
+
+def _env_rst_gpio() -> int | None:
+    """BCM pin for RES, or None if the board ties reset high (no Pi wire)."""
+    if "OLED_GPIO_RST" not in os.environ:
+        return 25
+    s = os.environ["OLED_GPIO_RST"].strip().lower()
+    if s in ("none", "nc", "float"):
+        return None
+    return int(s, 0)
 
 
 def _lazy_device() -> Any:
@@ -61,7 +81,7 @@ def _lazy_device() -> Any:
     if _STATE == "ready":
         return _DEVICE
     try:
-        from luma.core.interface.serial import i2c, spi
+        from luma.core.interface.serial import gpio_cs_spi, i2c, spi
         from luma.oled.device import ssd1306, sh1106
 
         driver = os.getenv("OLED_DRIVER", "ssd1306").strip().lower()
@@ -78,19 +98,33 @@ def _lazy_device() -> Any:
             spi_port = int(os.getenv("OLED_SPI_PORT", "0").strip())
             spi_dev = int(os.getenv("OLED_SPI_DEVICE", "0").strip())
             gpio_dc = int(os.getenv("OLED_GPIO_DC", "24").strip())
-            gpio_rst = int(os.getenv("OLED_GPIO_RST", "25").strip())
-            bus_hz = int(os.getenv("OLED_SPI_HZ", "8000000").strip())
-            _oled_debug(
-                f"spi spidev{spi_port}.{spi_dev} CE{spi_dev} DC=GPIO{gpio_dc} RST=GPIO{gpio_rst} "
-                f"{bus_hz}Hz driver={driver} rotate={rotate}"
-            )
-            serial = spi(
+            gpio_rst = _env_rst_gpio()
+            gpio_cs = _env_optional_int("OLED_GPIO_CS")
+            # 4 MHz default — dupont wires often glitch at 8 MHz on some modules.
+            bus_hz = int(os.getenv("OLED_SPI_HZ", "4000000").strip())
+            rst_hold = float(os.getenv("OLED_RESET_HOLD_S", "0.002").strip())
+            rst_release = float(os.getenv("OLED_RESET_RELEASE_S", "0.05").strip())
+            spi_kw: dict[str, Any] = dict(
                 port=spi_port,
                 device=spi_dev,
                 gpio_DC=gpio_dc,
                 gpio_RST=gpio_rst,
                 bus_speed_hz=bus_hz,
+                reset_hold_time=rst_hold,
+                reset_release_time=rst_release,
             )
+            if gpio_cs is not None:
+                _oled_debug(
+                    f"spi spidev{spi_port}.{spi_dev} software-CS=GPIO{gpio_cs} "
+                    f"DC=GPIO{gpio_dc} RST={gpio_rst} {bus_hz}Hz driver={driver} rotate={rotate}"
+                )
+                serial = gpio_cs_spi(gpio_CS=gpio_cs, **spi_kw)
+            else:
+                _oled_debug(
+                    f"spi spidev{spi_port}.{spi_dev} CE{spi_dev} DC=GPIO{gpio_dc} RST={gpio_rst} "
+                    f"{bus_hz}Hz driver={driver} rotate={rotate}"
+                )
+                serial = spi(**spi_kw)
 
         if driver == "sh1106":
             _DEVICE = sh1106(serial, width=128, height=64, rotate=rotate)
@@ -113,6 +147,7 @@ def _lazy_device() -> Any:
             print(
                 "[OLED] hint: enable SPI (raspi-config), check /dev/spidev0.0 exists, "
                 "and CS→CE0 (OLED_SPI_DEVICE=0) vs CE1 (=1). Try OLED_SPI_HZ=1000000. "
+                "If CS is on a random GPIO (not pin 24/26), set OLED_GPIO_CS=<BCM>. "
                 "Four-wire SDA/SCL boards need OLED_INTERFACE=i2c."
             )
         _STATE = "failed"
@@ -214,6 +249,15 @@ def oled_run_diag() -> None:
     print("[OLED] diag — kernel devices:")
     print("  SPI:", sorted(glob.glob("/dev/spidev*")))
     print("  I2C:", sorted(glob.glob("/dev/i2c*")))
+    print("[OLED] diag — GPIO library (DC/RST bit-bang):")
+    try:
+        __import__("RPi.GPIO")
+        print("  RPi.GPIO import OK (BCM mode used by luma).")
+    except Exception as e:
+        print(f"  RPi.GPIO failed: {e}")
+        print(
+            "  On Pi 5 / newer OS, install: pip install rpi-lgpio  (RPi.GPIO-compatible shim)."
+        )
     print("[OLED] diag — config:", _oled_cfg_fingerprint())
     if not _oled_enabled():
         print("Set OLED_ENABLED=1", file=sys.stderr)
@@ -227,18 +271,25 @@ def oled_run_diag() -> None:
         from luma.core.render import canvas
 
         font = ImageFont.load_default()
-        with canvas(dev) as draw:
-            draw.rectangle((0, 0, 127, 63), outline="white", width=2)
-            draw.rectangle((24, 20, 103, 44), fill="white")
-            draw.text((32, 28), "DIAG", font=font, fill="black")
+        if os.getenv("OLED_DIAG_FULL", "0").strip() == "1":
+            with canvas(dev) as draw:
+                draw.rectangle((0, 0, 127, 63), fill="white")
+            print("[OLED] diag: full-screen white (OLED_DIAG_FULL=1).")
+        else:
+            with canvas(dev) as draw:
+                draw.rectangle((0, 0, 127, 63), outline="white", width=2)
+                draw.rectangle((24, 20, 103, 44), fill="white")
+                draw.text((32, 28), "DIAG", font=font, fill="black")
+        if hasattr(dev, "show"):
+            dev.show()
     except Exception as e:
         print(f"[OLED] diag draw failed: {e}", file=sys.stderr)
         sys.exit(1)
     print(
-        "[OLED] diag: expect a white rectangle and 'DIAG' in the middle. "
-        "If the screen stays black: power (3.3V/GND), then CS→CE0 vs CE1 (OLED_SPI_DEVICE), "
-        "DC/RST GPIO numbers (OLED_GPIO_DC / OLED_GPIO_RST), and try OLED_SPI_HZ=1000000 "
-        "or OLED_DRIVER=sh1106.",
+        "[OLED] diag: expect a white rectangle and 'DIAG' in the middle (or full white if OLED_DIAG_FULL=1). "
+        "If still black: 3.3V/GND; CS on CE0 pin 24 (else OLED_SPI_DEVICE=1 for CE1 pin 26, or "
+        "OLED_GPIO_CS=<BCM> if CS is a GPIO); DC/RST must match OLED_GPIO_DC / OLED_GPIO_RST; "
+        "try OLED_SPI_HZ=1000000, OLED_DRIVER=sh1106, or longer OLED_RESET_RELEASE_S=0.15.",
     )
 
 
@@ -254,7 +305,8 @@ def main() -> None:
             "  OLED_ENABLED=1 python3 oled.py --test\n"
             "  OLED_ENABLED=1 python3 oled.py --diag\n"
             "I2C boards: OLED_INTERFACE=i2c\n"
-            "Optional: OLED_DEBUG=1  OLED_SPI_HZ=1000000  OLED_DRIVER=sh1106",
+            "Optional: OLED_DEBUG=1  OLED_SPI_HZ=1000000  OLED_DRIVER=sh1106\n"
+            "  OLED_GPIO_CS=<BCM> if CS is not on CE0/CE1  OLED_DIAG_FULL=1  OLED_RESET_RELEASE_S=0.15",
             file=sys.stderr,
         )
         sys.exit(2)

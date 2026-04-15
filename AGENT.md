@@ -159,13 +159,20 @@ RESCAN_BUTTON_PIN=22
 # OLED_SPI_DEVICE=0
 # OLED_GPIO_DC=24
 # OLED_GPIO_RST=25
-# OLED_SPI_HZ=8000000
+# OLED_SPI_HZ=4000000
+# OLED_GPIO_CS=5
+# OLED_RESET_HOLD_S=0.002
+# OLED_RESET_RELEASE_S=0.05
 # OLED_DRIVER=ssd1306
 # OLED_DRIVER=sh1106
 # OLED_ROTATE=0
+# OLED_GPIO_RST=none
+# OLED_DIAG_FULL=1
 ```
 
-**SPI OLED → Pi (SPI0, defaults above):** **VCC** → 3.3V (pin 1 or 17); **GND** → GND (e.g. pin 6); **MOSI** → GPIO10 / MOSI (pin 19); **CLK** → GPIO11 / SCLK (pin 23); **CS** → GPIO8 / CE0 (pin 24); **DC** → GPIO24 (pin 18); **RES** → GPIO25 (pin 22). If **CS** is wired to **CE1** instead, set **`OLED_SPI_DEVICE=1`**. Match **`OLED_GPIO_DC`** / **`OLED_GPIO_RST`** to the GPIO numbers you actually use for **DC** and **RES**.
+**SPI OLED → Pi (SPI0, defaults above):** **VCC** → 3.3V (pin 1 or 17); **GND** → GND (e.g. pin 6); **MOSI** → GPIO10 / MOSI (pin 19); **CLK** → GPIO11 / SCLK (pin 23); **CS** → GPIO8 / CE0 (pin 24); **DC** → GPIO24 (pin 18); **RES** → GPIO25 (pin 22). If **CS** is wired to **CE1** instead, set **`OLED_SPI_DEVICE=1`**. If **CS** is on a **GPIO that is not CE0/CE1**, set **`OLED_GPIO_CS=<BCM>`** (software chip-select; wire **CS** to that GPIO, not to pin 24/26). Match **`OLED_GPIO_DC`** / **`OLED_GPIO_RST`** to **BCM** numbers for **DC** / **RES** (or **`OLED_GPIO_RST=none`** if the module ties reset high). Default SPI clock is **4 MHz** (`OLED_SPI_HZ`); try **`1000000`** on long jumper wires. **`OLED_RESET_RELEASE_S`** (default **0.05**) helps fussy controllers after reset.
+
+**Still a black screen (init succeeds, no errors):** Run **`OLED_ENABLED=1 python3 oled.py --diag`** and read the **RPi.GPIO** line — on **Pi 5** / newer Bookworm, install **`rpi-lgpio`** (`pip install rpi-lgpio`) so **DC/RST** can toggle. Try **`OLED_DIAG_FULL=1`** with **`--diag`** (entire panel white). Try **`OLED_DRIVER=sh1106`**, **`OLED_SPI_HZ=1000000`**, **`OLED_RESET_RELEASE_S=0.15`**, and re-check **CS** (CE0 vs CE1 vs **`OLED_GPIO_CS`**).
 
 ## Requirements (requirements.txt)
 ```
