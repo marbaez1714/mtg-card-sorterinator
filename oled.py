@@ -3,6 +3,8 @@
 
 Requires: pip install luma.oled
 Pi SPI: raspi-config → enable SPI; GPIO defaults in _lazy_device (override with OLED_GPIO_*).
+  Typical SPI: GND, VCC (often **5V** per breakout docs — follow the silkscreen), CLK→GPIO11,
+  MOSI→GPIO10, CS→GPIO8 (CE0), DC→GPIO24, RES→GPIO25. Do **not** set OLED_GPIO_CS when CS is on CE0.
 Pi I2C: set OLED_INTERFACE=i2c, enable I2C; SDA→GPIO2, SCL→GPIO3, VCC→3.3V, GND.
 
 Docs example: https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display
