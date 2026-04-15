@@ -7,7 +7,7 @@ A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards usi
 - **Pi:** Raspberry Pi 4 (2GB)
 - **Camera:** **Raspberry Pi Camera Module 3** (the “Module 3” / IMX708 sensor; standard, not wide-angle). Software is still **`picamera2`** (libcamera) on Raspberry Pi OS — there is no separate `picamera3` Python package; `sudo apt install python3-picamera2` is correct.
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
-- **Display (optional):** **128×64 monochrome OLED** (common **SSD1306** or **SH1106**; e.g. [Inland 1.3" 128×64 article](https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display)). **I2C** boards use **SDA/SCL**; **SPI** boards use **CLK, MOSI, CS, DC, RES** plus power. Software: [`oled.py`](oled.py) + **`luma.oled`**. Set **`OLED_ENABLED=1`**; for SPI add **`OLED_INTERFACE=spi`**. Use **`OLED_DRIVER=ssd1306`** vs **`sh1106`** if the image is wrong. **DSI / HDMI framebuffer UI** remains deferred.
+- **Display (optional):** **128×64 monochrome OLED** (common **SSD1306** or **SH1106**; e.g. [Inland 1.3" 128×64 article](https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display)). **I2C** boards use **SDA/SCL**; **SPI** boards use **CLK, MOSI, CS, DC, RES** plus power. Software: [`oled.py`](oled.py) + **`luma.oled`**. Set **`OLED_ENABLED=1`**; **SPI is the default** (`OLED_INTERFACE` unset or **`spi`**). **I2C-only** boards need **`OLED_INTERFACE=i2c`**. Use **`OLED_DRIVER=ssd1306`** vs **`sh1106`** if the image is wrong. **DSI / HDMI framebuffer UI** remains deferred.
 
 **Scan quality (accuracy):** Move the camera so the **card fills most of the frame** (if the saved JPEG shows a tiny card on a big desk, OCR will struggle). Use diffuse light (avoid glare on the title) and keep the name line in focus. Picamera2 tuning (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** / **`CAMERA_STILL_SIZE`** (`WxH`; default **`1920x1080`**), **`CAMERA_SETTLE_S`** (seconds after start before capture; default **`0.75`**, raise if color/exposure drifts), **`CAMERA_JPEG_QUALITY`** (default **`82`**, lower = smaller/faster JPEG), **`CAMERA_SKIP_AF=1`** to skip **autofocus** each shot (faster; only if distance is fixed and sharp), **`CAMERA_AF_RANGE`**. For Claude only, **`MTG_CENTER_CROP_RATIO`** in [`claude_id.py`](claude_id.py) for a centered crop before vision.
 
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   `python3 app.py`
 
 - **Endpoints:** `GET /api/health` — liveness. `POST /api/identify` — capture → Claude only; returns `{ "vision": { "name", "set_name", "set_code", "collector_number" } }` and does **not** call Scryfall or change **pending**. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
-- **OLED:** With **`OLED_ENABLED=1`**, successful **`/api/scan`** shows the pending match on the display; **`/api/confirm`** shows “Saved”; **`/api/rescan`** shows the idle banner; failed **`/api/identify`**, **`/api/scan`**, or confirm paths show a short error line. Hardware smoke test: **`OLED_ENABLED=1 python3 oled.py --test`** (I2C default); SPI panels need **`OLED_INTERFACE=spi`** (enable SPI in raspi-config) and the wiring table under **Environment Variables**.
+- **OLED:** With **`OLED_ENABLED=1`**, successful **`/api/scan`** shows the pending match on the display; **`/api/confirm`** shows “Saved”; **`/api/rescan`** shows the idle banner; failed **`/api/identify`**, **`/api/scan`**, or confirm paths show a short error line. Hardware smoke test: **`OLED_ENABLED=1 python3 oled.py --test`** (**SPI** default — enable SPI in raspi-config); **I2C** boards set **`OLED_INTERFACE=i2c`**. If the panel stays black, run **`OLED_ENABLED=1 python3 oled.py --diag`**. Use **`OLED_DEBUG=1`** for init logging; try **`OLED_SPI_HZ=1000000`** or **`OLED_DRIVER=sh1106`** if wiring is correct but the image is wrong.
 
 - **Quick terminal testing** (no long `curl` lines): run [`scripts/api.sh`](scripts/api.sh) from the repo root, e.g. `./scripts/api.sh health`, `./scripts/api.sh identify`, `./scripts/api.sh scan`, `./scripts/api.sh confirm`, `./scripts/api.sh inventory 10`. Set **`MTG_API_BASE`** for a remote Pi (e.g. `MTG_API_BASE=http://raspberrypi.local:5000 ./scripts/api.sh scan`). Optional **`MTG_CONFIRM_JSON`** for confirm. Output is passed through **`jq`** if installed, else **`python3 -m json.tool`**.
 
@@ -151,8 +151,8 @@ RESCAN_BUTTON_PIN=22
 
 # Optional OLED (see oled.py)
 # OLED_ENABLED=1
-# OLED_INTERFACE=i2c
 # OLED_INTERFACE=spi
+# OLED_INTERFACE=i2c
 # OLED_I2C_PORT=1
 # OLED_I2C_ADDRESS=0x3C
 # OLED_SPI_PORT=0

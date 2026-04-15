@@ -1,15 +1,16 @@
 """
-128x64 monochrome OLED via luma.oled — **I2C** (4 wires: SDA/SCL) or **SPI** (CLK/MOSI/CS + DC/RES).
+128x64 monochrome OLED via luma.oled — **SPI** (default: CLK/MOSI/CS/DC/RES) or **I2C** (SDA/SCL).
 
 Requires: pip install luma.oled
-Pi I2C: raspi-config → enable I2C; SDA→GPIO2, SCL→GPIO3, VCC→3.3V, GND.
-Pi SPI: raspi-config → enable SPI; see OLED_INTERFACE=spi and env GPIO defaults in _lazy_device.
+Pi SPI: raspi-config → enable SPI; GPIO defaults in _lazy_device (override with OLED_GPIO_*).
+Pi I2C: set OLED_INTERFACE=i2c, enable I2C; SDA→GPIO2, SCL→GPIO3, VCC→3.3V, GND.
 
 Docs example: https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display
 """
 
 from __future__ import annotations
 
+import glob
 import os
 from typing import Any
 
@@ -17,16 +18,44 @@ from PIL import ImageFont
 
 _STATE: str = "uninit"  # uninit | ready | failed
 _DEVICE: Any = None
+_LAST_FAIL_FP: str | None = None
+_STUCK_LOGGED: bool = False
 
 
 def _oled_enabled() -> bool:
     return os.getenv("OLED_ENABLED", "0").strip() == "1"
 
 
+def _oled_debug(msg: str) -> None:
+    if os.getenv("OLED_DEBUG", "0").strip() == "1":
+        print(f"[OLED] debug: {msg}")
+
+
+def _oled_cfg_fingerprint() -> str:
+    keys = (
+        "OLED_INTERFACE",
+        "OLED_I2C_PORT",
+        "OLED_I2C_ADDRESS",
+        "OLED_SPI_PORT",
+        "OLED_SPI_DEVICE",
+        "OLED_GPIO_DC",
+        "OLED_GPIO_RST",
+        "OLED_SPI_HZ",
+        "OLED_DRIVER",
+        "OLED_ROTATE",
+    )
+    return "|".join(f"{k}={os.getenv(k, '')}" for k in keys)
+
+
 def _lazy_device() -> Any:
-    global _STATE, _DEVICE
+    global _STATE, _DEVICE, _LAST_FAIL_FP, _STUCK_LOGGED
     if not _oled_enabled():
         return None
+    fp = _oled_cfg_fingerprint()
+    if _STATE == "failed" and fp != _LAST_FAIL_FP:
+        _STATE = "uninit"
+        _DEVICE = None
+        _STUCK_LOGGED = False
     if _STATE == "failed":
         return None
     if _STATE == "ready":
@@ -39,13 +68,22 @@ def _lazy_device() -> Any:
         rotate = int(os.getenv("OLED_ROTATE", "0").strip())
         rotate = rotate % 4
 
-        iface = os.getenv("OLED_INTERFACE", "i2c").strip().lower()
-        if iface == "spi":
+        iface = os.getenv("OLED_INTERFACE", "spi").strip().lower()
+        if iface == "i2c":
+            i2c_port = int(os.getenv("OLED_I2C_PORT", "1").strip())
+            addr = int(os.getenv("OLED_I2C_ADDRESS", "0x3C").strip(), 16)
+            _oled_debug(f"i2c port={i2c_port} addr=0x{addr:02X} driver={driver}")
+            serial = i2c(port=i2c_port, address=addr)
+        else:
             spi_port = int(os.getenv("OLED_SPI_PORT", "0").strip())
             spi_dev = int(os.getenv("OLED_SPI_DEVICE", "0").strip())
             gpio_dc = int(os.getenv("OLED_GPIO_DC", "24").strip())
             gpio_rst = int(os.getenv("OLED_GPIO_RST", "25").strip())
             bus_hz = int(os.getenv("OLED_SPI_HZ", "8000000").strip())
+            _oled_debug(
+                f"spi port={spi_port} ce=device{spi_dev} DC=GPIO{gpio_dc} RST=GPIO{gpio_rst} "
+                f"{bus_hz}Hz driver={driver} rotate={rotate}"
+            )
             serial = spi(
                 port=spi_port,
                 device=spi_dev,
@@ -53,26 +91,32 @@ def _lazy_device() -> Any:
                 gpio_RST=gpio_rst,
                 bus_speed_hz=bus_hz,
             )
-        else:
-            i2c_port = int(os.getenv("OLED_I2C_PORT", "1").strip())
-            addr = int(os.getenv("OLED_I2C_ADDRESS", "0x3C").strip(), 16)
-            serial = i2c(port=i2c_port, address=addr)
 
         if driver == "sh1106":
             _DEVICE = sh1106(serial, width=128, height=64, rotate=rotate)
         else:
             _DEVICE = ssd1306(serial, width=128, height=64, rotate=rotate)
         _STATE = "ready"
+        _LAST_FAIL_FP = None
+        _STUCK_LOGGED = False
+        _oled_debug("init OK")
         return _DEVICE
     except Exception as e:
         print(f"[OLED] init failed: {e}")
         low = str(e).lower()
         if "i2c" in low or "/dev/i2c" in low:
             print(
-                "[OLED] hint: SPI panels need OLED_INTERFACE=spi (and SPI on in raspi-config). "
-                "I2C panels need I2C enabled and /dev/i2c-* present."
+                "[OLED] hint: I2C bus missing or wrong port — enable I2C (raspi-config), "
+                "check /dev/i2c-*, OLED_I2C_PORT, and OLED_I2C_ADDRESS."
+            )
+        if "spi" in low or "spidev" in low:
+            print(
+                "[OLED] hint: enable SPI (raspi-config), check /dev/spidev0.0 exists, "
+                "and CS→CE0 (OLED_SPI_DEVICE=0) vs CE1 (=1). Try OLED_SPI_HZ=1000000. "
+                "Four-wire SDA/SCL boards need OLED_INTERFACE=i2c."
             )
         _STATE = "failed"
+        _LAST_FAIL_FP = fp
         _DEVICE = None
         return None
 
@@ -90,8 +134,16 @@ def _fit_lines(text: str, width: int = 21, max_lines: int = 6) -> list[str]:
 
 
 def _draw(lines: list[str]) -> None:
+    global _STUCK_LOGGED
     dev = _lazy_device()
     if dev is None:
+        if _oled_enabled() and _STATE == "failed" and not _STUCK_LOGGED:
+            print(
+                "[OLED] draw skipped: init already failed for this config. Fix wiring/env, "
+                "then restart the process or change any OLED_* variable to retry. "
+                "Run: OLED_DEBUG=1 OLED_ENABLED=1 python3 oled.py --diag",
+            )
+            _STUCK_LOGGED = True
         return
     try:
         from luma.core.render import canvas
@@ -155,12 +207,54 @@ def oled_show_error(message: str) -> None:
     oled_show_lines(["Error", message[:63]])
 
 
+def oled_run_diag() -> None:
+    """High-contrast pattern to verify OLED wiring. Prints bus device paths."""
+    import sys
+
+    print("[OLED] diag — kernel devices:")
+    print("  SPI:", sorted(glob.glob("/dev/spidev*")))
+    print("  I2C:", sorted(glob.glob("/dev/i2c*")))
+    print("[OLED] diag — config:", _oled_cfg_fingerprint())
+    if not _oled_enabled():
+        print("Set OLED_ENABLED=1", file=sys.stderr)
+        sys.exit(2)
+    dev = _lazy_device()
+    if dev is None:
+        print("[OLED] diag: init failed.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        dev.contrast(0xFF)
+        from luma.core.render import canvas
+
+        font = ImageFont.load_default()
+        with canvas(dev) as draw:
+            draw.rectangle((0, 0, 127, 63), outline="white", width=2)
+            draw.rectangle((24, 20, 103, 44), fill="white")
+            draw.text((32, 28), "DIAG", font=font, fill="black")
+    except Exception as e:
+        print(f"[OLED] diag draw failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(
+        "[OLED] diag: expect a white rectangle and 'DIAG' in the middle. "
+        "If the screen stays black: power (3.3V/GND), then CS→CE0 vs CE1 (OLED_SPI_DEVICE), "
+        "DC/RST GPIO numbers (OLED_GPIO_DC / OLED_GPIO_RST), and try OLED_SPI_HZ=1000000 "
+        "or OLED_DRIVER=sh1106.",
+    )
+
+
 def main() -> None:
     import sys
 
+    if "--diag" in sys.argv:
+        oled_run_diag()
+        return
     if "--test" not in sys.argv:
         print(
-            "Usage: OLED_ENABLED=1 [OLED_INTERFACE=spi] python3 oled.py --test",
+            "Usage:\n"
+            "  OLED_ENABLED=1 python3 oled.py --test\n"
+            "  OLED_ENABLED=1 python3 oled.py --diag\n"
+            "I2C boards: OLED_INTERFACE=i2c\n"
+            "Optional: OLED_DEBUG=1  OLED_SPI_HZ=1000000  OLED_DRIVER=sh1106",
             file=sys.stderr,
         )
         sys.exit(2)
