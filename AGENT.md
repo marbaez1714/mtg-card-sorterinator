@@ -114,13 +114,13 @@ CREATE TABLE IF NOT EXISTS inventory (
   Use `python3` / `pip` only while the venv is activated (or run tools as `.venv/bin/python`). On Windows: `.venv\Scripts\activate`.
 - **Dev machine:** All development happens on a separate computer. The Pi is the deploy target only.
 - **No desktop on Pi:** Do not assume X11, Wayland, or a browser is available.
-- **Testing camera locally:** Mock `camera.py` with a static test JPEG when not on Pi hardware.
+- **Camera:** [`camera.py`](camera.py) requires **picamera2** on the Pi (no mock path). Use ``python3 test_camera.py`` on the device to verify capture; for Claude tests without hardware, run ``claude_id.py`` on a JPEG file saved from the Pi.
 - **Deployment:** rsync or `scp` to Pi, run via a systemd service on boot.
 
 ### Running the Flask app (headless API)
 
 - **v1 has no authentication**; only run on a network you trust (e.g. home LAN). Listens on `0.0.0.0` so other devices can reach the Pi.
-- Activate venv, set **`ANTHROPIC_API_KEY`** (and optional **`MOCK_CAMERA=1`** on a dev machine without a camera). Optional: **`FLASK_PORT`** (default `5000`), **`FLASK_DEBUG=1`** for Flask debug mode (not for production).
+- Activate venv, set **`ANTHROPIC_API_KEY`**. Optional: **`FLASK_PORT`** (default `5000`), **`FLASK_DEBUG=1`** for Flask debug mode (not for production). Camera routes require **picamera2** on the Pi.
 
   `python3 app.py`
 
@@ -136,8 +136,6 @@ CREATE TABLE IF NOT EXISTS inventory (
   curl -sS -X POST http://raspberrypi.local:5000/api/scan
   curl -sS -X POST http://raspberrypi.local:5000/api/confirm -H 'Content-Type: application/json' -d '{"foil":false,"quantity":1}'
   ```
-
-- A stub JPEG from `MOCK_CAMERA=1` is not a real card image; use a Pi capture or a real JPEG to test vision accuracy.
 
 ## Environment Variables (.env)
 ```

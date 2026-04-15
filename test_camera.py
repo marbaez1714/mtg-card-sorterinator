@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Manual verification script for camera.py on Raspberry Pi.
+Manual verification script for camera.py on Raspberry Pi (requires picamera2).
 
 Usage:
-    python3 test_camera.py              # real camera (or mock if no picamera2)
-    MOCK_CAMERA=1 python3 test_camera.py  # force mock path
+    python3 test_camera.py              # capture twice
     python3 test_camera.py --save       # save JPEG to /tmp/card_test.jpg
                                         # then: scp pi@raspberrypi.local:/tmp/card_test.jpg .
                                         # Prints JPEG width x height (needs Pillow).
