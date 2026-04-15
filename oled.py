@@ -188,12 +188,13 @@ def _draw(lines: list[str]) -> None:
         if hasattr(dev, "contrast"):
             dev.contrast(0xFF)
         font = ImageFont.load_default()
-        # Black on white matches --diag (high contrast). White-on-black can look “off” on some modules.
+        # Black field + white text (default font is tiny; a full white wash drowns glyphs).
         with canvas(dev) as draw:
-            draw.rectangle((0, 0, 127, 63), fill="white")
+            draw.rectangle((0, 0, 127, 63), fill="black")
+            draw.rectangle((0, 0, 127, 63), outline="white", width=1)
             y = 0
             for line in lines[:6]:
-                draw.text((0, y), line[:32], font=font, fill="black")
+                draw.text((0, y), line[:32], font=font, fill="white")
                 y += 11
         if hasattr(dev, "show"):
             dev.show()
