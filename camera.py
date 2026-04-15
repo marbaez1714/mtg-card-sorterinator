@@ -1,6 +1,7 @@
 import io
 import os
 import time
+from typing import Optional
 
 try:
     from picamera2 import Picamera2
@@ -33,10 +34,24 @@ def _af_range() -> int:
 
 
 def _settle_s() -> float:
+    """Seconds after stream start before capture (AEC/AWB). Lower = faster; too low may look warm/cold."""
     try:
-        return max(0.0, float(os.getenv("CAMERA_SETTLE_S", "2.0").strip()))
+        return max(0.0, float(os.getenv("CAMERA_SETTLE_S", "0.75").strip()))
     except ValueError:
-        return 2.0
+        return 0.75
+
+
+def _jpeg_quality_default() -> int:
+    try:
+        q = int(os.getenv("CAMERA_JPEG_QUALITY", "82").strip())
+    except ValueError:
+        return 82
+    return max(40, min(100, q))
+
+
+def _skip_autofocus() -> bool:
+    """Set CAMERA_SKIP_AF=1 if the rig is at fixed distance (saves a full AF sweep each shot)."""
+    return os.getenv("CAMERA_SKIP_AF", "0").strip() == "1"
 
 
 _CAMERA_CONTROLS_BASE = {
@@ -79,9 +94,10 @@ class _RealCardCamera:
     def capture_jpeg(self) -> bytes:
         if self._cam is None:
             raise RuntimeError("Camera not started — call start() first")
-        success = self._cam.autofocus_cycle(wait=True)
-        if not success:
-            print("Warning: autofocus did not converge — proceeding with capture anyway")
+        if not _skip_autofocus():
+            success = self._cam.autofocus_cycle(wait=True)
+            if not success:
+                print("Warning: autofocus did not converge — proceeding with capture anyway")
         buf = io.BytesIO()
         self._cam.capture_file(buf, format="jpeg")
         return buf.getvalue()
@@ -100,11 +116,13 @@ class _RealCardCamera:
         self.stop()
 
 
-def CardCamera(jpeg_quality: int = 90):
+def CardCamera(jpeg_quality: Optional[int] = None):
     """
     Return a Picamera2-backed camera controller for **Raspberry Pi Camera Module 3**
     (IMX708). The supported Python API is still the ``picamera2`` package on Raspberry Pi OS
     (``sudo apt install -y python3-picamera2``) — not a separate ``picamera3`` library name.
+
+    If ``jpeg_quality`` is omitted, uses env ``CAMERA_JPEG_QUALITY`` (default 82).
     """
     if Picamera2 is None:
         raise RuntimeError(
@@ -119,4 +137,5 @@ def CardCamera(jpeg_quality: int = 90):
             "  • picamera2 only exists on Raspberry Pi OS (not macOS/Windows).\n"
             "  • Quick check: python3 -c \"from picamera2 import Picamera2\""
         )
-    return _RealCardCamera(jpeg_quality)
+    q = int(jpeg_quality) if jpeg_quality is not None else _jpeg_quality_default()
+    return _RealCardCamera(q)

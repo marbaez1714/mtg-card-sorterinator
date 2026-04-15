@@ -29,7 +29,7 @@ def main():
     save = "--save" in sys.argv
 
     print("Initialising camera...")
-    cam = CardCamera(jpeg_quality=90)
+    cam = CardCamera()
 
     try:
         cam.start()
