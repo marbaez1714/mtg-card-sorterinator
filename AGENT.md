@@ -32,8 +32,9 @@ mtg-scanner/
 
 ### Claude Vision API
 - Model: `claude-sonnet-4-20250514`
-- Purpose: Identify card name and set from a JPEG image (reads the **printed title line**; `set_name` only when clearly printed, else `null`). When the **type-line set code** and **collector number** are legible, the model also returns **`set_code`** and **`collector_number`** so Scryfall can use an exact card URL instead of fuzzy name search.
-- Implementation uses a short **system** message plus a **user** prompt and image; the model must return **only** a JSON object. See [`claude_id.py`](claude_id.py) for the exact keys and wording.
+- Purpose: Read a JPEG and return **`name`**, **`set_name`**, **`set_code`**, **`collector_number`** as **printed OCR** on the frame — the prompts frame this as strict transcription (title strip, type line), not “guess the famous card from the art.” Instructions are sent **before** the image in the API call; **`ANTHROPIC_TEMPERATURE`** defaults to **`0`** for steadier reads (override in `.env` if needed).
+- When the **type-line set code** and **collector number** are legible, Scryfall can use an exact card URL instead of fuzzy name search.
+- See [`claude_id.py`](claude_id.py) for full prompt text and keys.
 - API key stored in `.env` as `ANTHROPIC_API_KEY`
 
 ### Testing Claude ID
@@ -140,6 +141,7 @@ CREATE TABLE IF NOT EXISTS inventory (
 ## Environment Variables (.env)
 ```
 ANTHROPIC_API_KEY=your_key_here
+ANTHROPIC_TEMPERATURE=0
 SCAN_BUTTON_PIN=17
 CONFIRM_BUTTON_PIN=27
 RESCAN_BUTTON_PIN=22

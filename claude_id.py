@@ -18,28 +18,42 @@ _DEFAULT_MODEL = "claude-sonnet-4-20250514"
 _MAX_TOKENS = 1024
 
 _SYSTEM = (
-    "You identify Magic: The Gathering cards from photos. "
-    "Be literal: copy the printed English title from the card frame, not a similar card from memory. "
-    "Output must be a single JSON object only."
+    "You perform strict OCR on Magic: The Gathering trading cards shown in photographs. "
+    "You read only ink that is printed on the card frame. You must not infer identity from artwork, "
+    "flavor text, mana symbols, or prior knowledge of Magic cards. "
+    "If the illustration resembles a well-known character but the printed title says something else, "
+    "the printed title wins. "
+    "Respond with exactly one JSON object and no other characters."
 )
 
-_PROMPT = """Look at the Magic: The Gathering card in the image.
+_PROMPT = """The image after this paragraph is (or should be) one Magic card face, roughly filling the frame.
 
-Rules for "name":
-- Read the main card title printed along the top of the card face (the name line). Use that exact English text, including punctuation (e.g. commas, apostrophes) as printed.
-- If only one face is visible on a double-faced card, use that face's printed name.
-- Do not substitute a different card that "looks similar". If glare, sleeves, blur, or angle make the title ambiguous, transcribe the letters you can see literally; do not invent a clean guess of a different card.
+This is a transcription task, not "name the creature in the art."
 
-Rules for "set_name":
-- Only fill this if you can read an actual printed set name or expansion line on this card (not from artwork alone). Otherwise use null.
-- If unsure, use null.
+1) "name" — title line only
+Locate the card name strip inside the inner border at the TOP of the face — the distinctive name typography, NOT the mana cost in the upper-right corner, NOT the type line below the art, NOT flavor text.
+Copy the English text exactly as printed (punctuation and apostrophes included). If the title visually wraps to a second line on the cardboard, join the parts with a single ASCII space.
+If lighting or blur leaves some letters unclear, output the most faithful transcription of the glyphs you can see; do NOT substitute a different, cleaner, or more famous card name that you think matches the art.
 
-Rules for "set_code" and "collector_number" (strongly improves database matching when legible):
-- Many cards print a small set code and collector number on the type line (often like "DMU · 123" or set symbol + number). If you can read a **3–5 character lowercase set code** (letters/numbers only, e.g. `dmu`, `neo`, `10e`) and the **collector number** (digits, sometimes with a letter suffix like `12a`), include them. Otherwise use null for each.
-- Never guess these from memory; only transcribe what is visible on this print.
+2) "set_name"
+Only if a set / expansion name is visibly printed on this face (not inferred from art). Otherwise JSON null.
 
-Return ONLY a JSON object (no markdown, no commentary):
-{"name": "exact printed card name", "set_name": "printed set name or null", "set_code": "lowercase code or null", "collector_number": "printed collector or null"}"""
+3) "set_code" and "collector_number"
+Many modern prints show a small alphanumeric set code (often 3–5 characters, e.g. neo, dmu, 10e) and a collector number (digits, sometimes 12a) on or near the TYPE line (below the art, left side near mana value). Transcribe only what is clearly legible in the image; otherwise JSON null for each. Never fill these from memory.
+
+4) Output format
+Return a single JSON object with these keys only:
+{"name":"...","set_name":null,"set_code":null,"collector_number":null}
+Use JSON null (not the string "null") when a field is absent or unreadable. No markdown fences, no commentary."""
+
+
+def _temperature() -> float:
+    raw = os.environ.get("ANTHROPIC_TEMPERATURE", "0").strip()
+    try:
+        t = float(raw)
+    except ValueError:
+        return 0.0
+    return max(0.0, min(1.0, t))
 
 
 class CardIdentificationError(Exception):
@@ -146,7 +160,8 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
     Returns ``name``, ``set_name``, and when readable on the frame ``set_code`` /
     ``collector_number`` for exact Scryfall lookup.
 
-    Requires ANTHROPIC_API_KEY. Optional ANTHROPIC_MODEL (default Sonnet per AGENT.md).
+    Requires ANTHROPIC_API_KEY. Optional: ``ANTHROPIC_MODEL`` (default Sonnet per AGENT.md),
+    ``ANTHROPIC_TEMPERATURE`` (default ``0`` for steadier OCR).
     """
     if not jpeg_bytes:
         raise CardIdentificationError("Empty JPEG buffer")
@@ -162,11 +177,13 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
         response = client.messages.create(
             model=_model(),
             max_tokens=_MAX_TOKENS,
+            temperature=_temperature(),
             system=_SYSTEM,
             messages=[
                 {
                     "role": "user",
                     "content": [
+                        {"type": "text", "text": _PROMPT},
                         {
                             "type": "image",
                             "source": {
@@ -175,7 +192,6 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
                                 "data": b64,
                             },
                         },
-                        {"type": "text", "text": _PROMPT},
                     ],
                 }
             ],
