@@ -10,5 +10,7 @@
 # After the apt install, also install the pip packages:
 #   pip install -r requirements.txt
 #
-# Optional 128x64 I2C OLED (see oled.py, AGENT.md): enable I2C in raspi-config,
-# then set OLED_ENABLED=1 (and OLED_DRIVER=ssd1306 or sh1106 if needed).
+# Optional 128x64 OLED (see oled.py, AGENT.md):
+#   I2C: enable I2C in raspi-config; OLED_ENABLED=1 (default OLED_INTERFACE=i2c).
+#   SPI: enable SPI in raspi-config; OLED_ENABLED=1 OLED_INTERFACE=spi
+#        (wire per AGENT.md; OLED_DRIVER=ssd1306 or sh1106 if needed).

@@ -1,8 +1,9 @@
 """
-128x64 monochrome OLED over I2C (e.g. Inland / similar SSD1306 or SH1106 modules).
+128x64 monochrome OLED via luma.oled — **I2C** (4 wires: SDA/SCL) or **SPI** (CLK/MOSI/CS + DC/RES).
 
 Requires: pip install luma.oled
-Pi: enable I2C (raspi-config), wire SDA→GPIO2, SCL→GPIO3, VCC→3.3V, GND→GND.
+Pi I2C: raspi-config → enable I2C; SDA→GPIO2, SCL→GPIO3, VCC→3.3V, GND.
+Pi SPI: raspi-config → enable SPI; see OLED_INTERFACE=spi and env GPIO defaults in _lazy_device.
 
 Docs example: https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display
 """
@@ -31,16 +32,32 @@ def _lazy_device() -> Any:
     if _STATE == "ready":
         return _DEVICE
     try:
-        from luma.core.interface.serial import i2c
+        from luma.core.interface.serial import i2c, spi
         from luma.oled.device import ssd1306, sh1106
 
-        port = int(os.getenv("OLED_I2C_PORT", "1").strip())
-        addr = int(os.getenv("OLED_I2C_ADDRESS", "0x3C").strip(), 16)
         driver = os.getenv("OLED_DRIVER", "ssd1306").strip().lower()
         rotate = int(os.getenv("OLED_ROTATE", "0").strip())
         rotate = rotate % 4
 
-        serial = i2c(port=port, address=addr)
+        iface = os.getenv("OLED_INTERFACE", "i2c").strip().lower()
+        if iface == "spi":
+            spi_port = int(os.getenv("OLED_SPI_PORT", "0").strip())
+            spi_dev = int(os.getenv("OLED_SPI_DEVICE", "0").strip())
+            gpio_dc = int(os.getenv("OLED_GPIO_DC", "24").strip())
+            gpio_rst = int(os.getenv("OLED_GPIO_RST", "25").strip())
+            bus_hz = int(os.getenv("OLED_SPI_HZ", "8000000").strip())
+            serial = spi(
+                port=spi_port,
+                device=spi_dev,
+                gpio_DC=gpio_dc,
+                gpio_RST=gpio_rst,
+                bus_speed_hz=bus_hz,
+            )
+        else:
+            i2c_port = int(os.getenv("OLED_I2C_PORT", "1").strip())
+            addr = int(os.getenv("OLED_I2C_ADDRESS", "0x3C").strip(), 16)
+            serial = i2c(port=i2c_port, address=addr)
+
         if driver == "sh1106":
             _DEVICE = sh1106(serial, width=128, height=64, rotate=rotate)
         else:
@@ -49,6 +66,12 @@ def _lazy_device() -> Any:
         return _DEVICE
     except Exception as e:
         print(f"[OLED] init failed: {e}")
+        low = str(e).lower()
+        if "i2c" in low or "/dev/i2c" in low:
+            print(
+                "[OLED] hint: SPI panels need OLED_INTERFACE=spi (and SPI on in raspi-config). "
+                "I2C panels need I2C enabled and /dev/i2c-* present."
+            )
         _STATE = "failed"
         _DEVICE = None
         return None
@@ -136,7 +159,10 @@ def main() -> None:
     import sys
 
     if "--test" not in sys.argv:
-        print("Usage: OLED_ENABLED=1 python3 oled.py --test", file=sys.stderr)
+        print(
+            "Usage: OLED_ENABLED=1 [OLED_INTERFACE=spi] python3 oled.py --test",
+            file=sys.stderr,
+        )
         sys.exit(2)
     if not _oled_enabled():
         print("Set OLED_ENABLED=1 for hardware test.", file=sys.stderr)
