@@ -242,6 +242,142 @@ def oled_show_error(message: str) -> None:
     oled_show_lines(["Error", message[:63]])
 
 
+def oled_run_probe_raw() -> None:
+    """
+    Minimal SSD1306 SPI bring-up without luma (spidev + RPi.GPIO for DC/CS/RST).
+
+    Use this when --diag shows no errors but the panel stays black: if --probe
+    also shows nothing, the problem is almost certainly wiring, voltage, wrong
+    controller (not SSD1306-class), or CS/DC/RST on the wrong pins — not Python logic.
+    """
+    import sys
+    import time
+
+    if os.getenv("OLED_INTERFACE", "spi").strip().lower() == "i2c":
+        print("[OLED] probe: raw SPI probe is only for SPI panels.", file=sys.stderr)
+        sys.exit(2)
+    if not _oled_enabled():
+        print("Set OLED_ENABLED=1", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        import spidev  # type: ignore[import-untyped]
+    except ImportError:
+        print("[OLED] probe: pip install spidev  (usually pulled in with luma.oled)", file=sys.stderr)
+        sys.exit(1)
+
+    gpio_dc = int(os.getenv("OLED_GPIO_DC", "24").strip())
+    gpio_rst = _env_rst_gpio()
+    gpio_cs = _env_optional_int("OLED_GPIO_CS")
+    spi_port = int(os.getenv("OLED_SPI_PORT", "0").strip())
+    spi_dev = int(os.getenv("OLED_SPI_DEVICE", "0").strip())
+    hz = int(os.getenv("OLED_SPI_HZ", "1000000").strip())
+
+    try:
+        import RPi.GPIO as GPIO  # type: ignore[import-untyped]
+    except Exception as e:
+        print(f"[OLED] probe: RPi.GPIO import failed: {e}", file=sys.stderr)
+        print("  Try: pip install rpi-lgpio   (Pi 5 / Bookworm)", file=sys.stderr)
+        sys.exit(1)
+
+    # Same init bytes as luma ssd1306 128x64 (see luma.oled.device.ssd1306).
+    _INIT12864: list[int] = [
+        0xAE,
+        0xD5,
+        0x80,
+        0xA8,
+        0x3F,
+        0xD3,
+        0x00,
+        0x40,
+        0x8D,
+        0x14,
+        0x20,
+        0x00,
+        0xA1,
+        0xC8,
+        0xDA,
+        0x12,
+        0xD9,
+        0xF1,
+        0xDB,
+        0x40,
+        0xA4,
+        0xA6,
+    ]
+
+    spi: Any = None
+    try:
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        GPIO.setup(gpio_dc, GPIO.OUT)
+        GPIO.output(gpio_dc, GPIO.LOW)
+        if gpio_cs is not None:
+            GPIO.setup(gpio_cs, GPIO.OUT)
+            GPIO.output(gpio_cs, GPIO.HIGH)
+        if gpio_rst is not None:
+            GPIO.setup(gpio_rst, GPIO.OUT)
+            GPIO.output(gpio_rst, GPIO.LOW)
+            time.sleep(0.01)
+            GPIO.output(gpio_rst, GPIO.HIGH)
+            time.sleep(0.05)
+
+        spi = spidev.SpiDev()
+        spi.open(spi_port, spi_dev)
+        if gpio_cs is not None:
+            spi.no_cs = True
+        spi.max_speed_hz = hz
+        spi.mode = 0
+
+        def xfer_cmd(bs: list[int]) -> None:
+            GPIO.output(gpio_dc, GPIO.LOW)
+            if gpio_cs is not None:
+                GPIO.output(gpio_cs, GPIO.LOW)
+            spi.xfer2(bs)
+            if gpio_cs is not None:
+                GPIO.output(gpio_cs, GPIO.HIGH)
+
+        def xfer_data(bs: list[int]) -> None:
+            GPIO.output(gpio_dc, GPIO.HIGH)
+            if gpio_cs is not None:
+                GPIO.output(gpio_cs, GPIO.LOW)
+            spi.xfer2(bs)
+            if gpio_cs is not None:
+                GPIO.output(gpio_cs, GPIO.HIGH)
+
+        xfer_cmd(_INIT12864)
+        xfer_cmd([0x81, 0xFF])
+
+        if os.getenv("OLED_PROBE_INVERT", "0").strip() == "1":
+            xfer_cmd([0xAF])
+            xfer_cmd([0xA7])
+            print(
+                "[OLED] probe: sent DISPLAYON + INVERT (0xA7). "
+                "The whole panel should look inverted / lit if this is an SSD1306 and DC/SPI/CS are correct."
+            )
+            return
+
+        xfer_cmd([0x21, 0x00, 0x7F, 0x22, 0x00, 0x07])
+        xfer_data([0xFF] * 1024)
+        xfer_cmd([0xAF])
+        print(
+            "[OLED] probe: raw SSD1306 init + full white framebuffer + DISPLAYON (bypassed luma). "
+            "If this is still black but RPi.GPIO and spidev succeeded, recheck 3.3V/GND, "
+            "MOSI→pin19 SCLK→pin23 CS→CE0 pin24 (or CE1 / OLED_GPIO_CS), DC→BCM24 pin18, "
+            "RES→BCM25 pin22. Some modules are not SSD1306 (need a different driver)."
+        )
+    finally:
+        try:
+            if spi is not None:
+                spi.close()
+        except Exception:
+            pass
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
+
+
 def oled_run_diag() -> None:
     """High-contrast pattern to verify OLED wiring. Prints bus device paths."""
     import sys
@@ -299,14 +435,19 @@ def main() -> None:
     if "--diag" in sys.argv:
         oled_run_diag()
         return
+    if "--probe" in sys.argv:
+        oled_run_probe_raw()
+        return
     if "--test" not in sys.argv:
         print(
             "Usage:\n"
             "  OLED_ENABLED=1 python3 oled.py --test\n"
             "  OLED_ENABLED=1 python3 oled.py --diag\n"
+            "  OLED_ENABLED=1 python3 oled.py --probe   (raw spidev+GPIO, SSD1306 only)\n"
             "I2C boards: OLED_INTERFACE=i2c\n"
             "Optional: OLED_DEBUG=1  OLED_SPI_HZ=1000000  OLED_DRIVER=sh1106\n"
-            "  OLED_GPIO_CS=<BCM> if CS is not on CE0/CE1  OLED_DIAG_FULL=1  OLED_RESET_RELEASE_S=0.15",
+            "  OLED_GPIO_CS=<BCM> if CS is not on CE0/CE1  OLED_DIAG_FULL=1  OLED_RESET_RELEASE_S=0.15\n"
+            "  OLED_PROBE_INVERT=1 python3 oled.py --probe  (display invert test)",
             file=sys.stderr,
         )
         sys.exit(2)
