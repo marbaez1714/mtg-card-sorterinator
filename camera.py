@@ -103,9 +103,9 @@ class _RealCardCamera:
 
 def CardCamera(jpeg_quality: int = 90):
     """
-    Return a Picamera2-backed camera controller.
-
-    Requires ``picamera2`` (Raspberry Pi OS: ``sudo apt install -y python3-picamera2``).
+    Return a Picamera2-backed camera controller for **Raspberry Pi Camera Module 3**
+    (IMX708). The supported Python API is still the ``picamera2`` package on Raspberry Pi OS
+    (``sudo apt install -y python3-picamera2``) — not a separate ``picamera3`` library name.
     """
     if Picamera2 is None:
         raise RuntimeError(

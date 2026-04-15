@@ -5,7 +5,7 @@ A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards usi
 
 ## Hardware
 - **Pi:** Raspberry Pi 4 (2GB)
-- **Camera:** Raspberry Pi Camera Module 3 (standard, not wide-angle), accessed via Picamera2
+- **Camera:** **Raspberry Pi Camera Module 3** (the “Module 3” / IMX708 sensor; standard, not wide-angle). Software is still **`picamera2`** (libcamera) on Raspberry Pi OS — there is no separate `picamera3` Python package; `sudo apt install python3-picamera2` is correct.
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
 
 **Scan quality (accuracy):** Move the camera so the **card fills most of the frame** (if the saved JPEG shows a tiny card on a big desk, OCR will struggle). Use diffuse light (avoid glare on the title) and keep the name line in focus. Optional Picamera2 env vars (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** / **`CAMERA_STILL_SIZE`** as `WxH` (default still is **`3280x2464`**; lower to e.g. `2304x1296` if the Pi runs out of memory), **`CAMERA_SETTLE_S`**, **`CAMERA_AF_RANGE`**. For Claude only, **`MTG_CENTER_CROP_RATIO`** (e.g. `0.55`) in [`claude_id.py`](claude_id.py) crops to the center of the image so a **centered** card appears larger before vision (does not help if the card is off-center).
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   Use `python3` / `pip` only while the venv is activated (or run tools as `.venv/bin/python`). On Windows: `.venv\Scripts\activate`.
 - **Dev machine:** All development happens on a separate computer. The Pi is the deploy target only.
 - **No desktop on Pi:** Do not assume X11, Wayland, or a browser is available.
-- **Camera:** [`camera.py`](camera.py) requires **picamera2** on the Pi (no mock path). Use ``python3 test_camera.py`` on the device to verify capture; for Claude tests without hardware, run ``claude_id.py`` on a JPEG file saved from the Pi.
+- **Camera:** [`camera.py`](camera.py) targets **Camera Module 3** via **`picamera2`** on the Pi. Use ``python3 test_camera.py`` on the device to verify capture; for Claude tests off the Pi, run ``claude_id.py`` on a JPEG saved from the camera.
 - **Deployment:** rsync or `scp` to Pi, run via a systemd service on boot.
 
 ### Running the Flask app (headless API)

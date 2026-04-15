@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Manual verification script for camera.py on Raspberry Pi (requires picamera2).
+Manual verification for Raspberry Pi **Camera Module 3** via ``picamera2`` (libcamera).
 
 Usage:
     python3 test_camera.py              # capture twice
