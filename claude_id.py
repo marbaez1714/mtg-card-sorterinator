@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -26,25 +27,25 @@ _SYSTEM = (
     "Respond with exactly one JSON object and no other characters."
 )
 
-_PROMPT = """The image after this paragraph is (or should be) one Magic card face, roughly filling the frame.
+_PROMPT = """The image attached with this message shows one Magic: The Gathering card face (or should). Use upright reading order: the card name is the large title typography along the top inside the inner frame.
 
 This is a transcription task, not "name the creature in the art."
 
 1) "name" — title line only
-Locate the card name strip inside the inner border at the TOP of the face — the distinctive name typography, NOT the mana cost in the upper-right corner, NOT the type line below the art, NOT flavor text.
-Copy the English text exactly as printed (punctuation and apostrophes included). If the title visually wraps to a second line on the cardboard, join the parts with a single ASCII space.
-If lighting or blur leaves some letters unclear, output the most faithful transcription of the glyphs you can see; do NOT substitute a different, cleaner, or more famous card name that you think matches the art.
+The name is the prominent title line at the top of the face, inside the inner border. It is NOT the mana symbols/cost in the upper-right corner. It is NOT the type line (creature/artifact/etc.) immediately under the illustration. It is NOT flavor text in italics at the bottom.
+Copy the printed spelling exactly (any language or script shown; punctuation and apostrophes as printed). If the title wraps to a second line on the cardboard, join with one ASCII space.
+If any letters are unclear, transcribe the glyphs you see; do NOT replace with a different famous card name that matches the artwork.
 
 2) "set_name"
-Only if a set / expansion name is visibly printed on this face (not inferred from art). Otherwise JSON null.
+Only if a set / expansion name is visibly printed on this face. Otherwise JSON null.
 
 3) "set_code" and "collector_number"
-Many modern prints show a small alphanumeric set code (often 3–5 characters, e.g. neo, dmu, 10e) and a collector number (digits, sometimes 12a) on or near the TYPE line (below the art, left side near mana value). Transcribe only what is clearly legible in the image; otherwise JSON null for each. Never fill these from memory.
+Often on the TYPE line below the art: a short set code (e.g. neo, dmu, 10e) and collector number (e.g. 123 or 12a). Transcribe only if clearly legible; else JSON null each. Never invent from memory.
 
 4) Output format
 Return a single JSON object with these keys only:
 {"name":"...","set_name":null,"set_code":null,"collector_number":null}
-Use JSON null (not the string "null") when a field is absent or unreadable. No markdown fences, no commentary."""
+Use JSON null when absent or unreadable. No markdown fences, no commentary."""
 
 
 def _temperature() -> float:
@@ -54,6 +55,43 @@ def _temperature() -> float:
     except ValueError:
         return 0.0
     return max(0.0, min(1.0, t))
+
+
+def _prepare_jpeg_for_vision(jpeg_bytes: bytes) -> bytes:
+    """
+    Apply EXIF orientation (fixes sideways photos) and optional manual rotation.
+
+    Set ``CLAUDE_AUTO_ORIENT=0`` to skip EXIF. Set ``CLAUDE_JPEG_ROTATE`` to ``90``,
+    ``180``, or ``270`` to rotate the image clockwise that many degrees after EXIF fix
+    (useful if the Pi camera is mounted sideways and JPEGs have no EXIF).
+    """
+    auto = os.getenv("CLAUDE_AUTO_ORIENT", "1").strip() != "0"
+    rot_s = os.getenv("CLAUDE_JPEG_ROTATE", "0").strip()
+    if not auto and rot_s not in ("90", "180", "270"):
+        return jpeg_bytes
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return jpeg_bytes
+    try:
+        q = int(os.getenv("CLAUDE_JPEG_QUALITY", "92").strip())
+    except ValueError:
+        q = 92
+    q = max(70, min(100, q))
+    try:
+        im = Image.open(io.BytesIO(jpeg_bytes))
+        if auto:
+            im = ImageOps.exif_transpose(im)
+        if rot_s in ("90", "180", "270"):
+            resample = getattr(Image, "Resampling", Image).BICUBIC
+            im = im.rotate(-int(rot_s), expand=True, resample=resample, fillcolor=(255, 255, 255))
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        out = io.BytesIO()
+        im.save(out, format="JPEG", quality=q, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return jpeg_bytes
 
 
 class CardIdentificationError(Exception):
@@ -162,6 +200,9 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
 
     Requires ANTHROPIC_API_KEY. Optional: ``ANTHROPIC_MODEL`` (default Sonnet per AGENT.md),
     ``ANTHROPIC_TEMPERATURE`` (default ``0`` for steadier OCR).
+    JPEGs are passed through Pillow EXIF auto-orient by default; see ``CLAUDE_AUTO_ORIENT``,
+    ``CLAUDE_JPEG_ROTATE``, and ``CLAUDE_JPEG_QUALITY`` in code docstrings if the camera
+    is mounted sideways or titles still read wrong.
     """
     if not jpeg_bytes:
         raise CardIdentificationError("Empty JPEG buffer")
@@ -170,7 +211,8 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
     if not api_key:
         raise CardIdentificationError("ANTHROPIC_API_KEY is not set")
 
-    b64 = base64.standard_b64encode(jpeg_bytes).decode("ascii")
+    jpeg_for_api = _prepare_jpeg_for_vision(jpeg_bytes)
+    b64 = base64.standard_b64encode(jpeg_for_api).decode("ascii")
     client = Anthropic(api_key=api_key)
 
     try:
@@ -183,7 +225,6 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": _PROMPT},
                         {
                             "type": "image",
                             "source": {
@@ -192,6 +233,7 @@ def identify_card_from_jpeg(jpeg_bytes: bytes) -> dict[str, str | None]:
                                 "data": b64,
                             },
                         },
+                        {"type": "text", "text": _PROMPT},
                     ],
                 }
             ],

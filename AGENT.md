@@ -35,6 +35,7 @@ mtg-scanner/
 - Purpose: Read a JPEG and return **`name`**, **`set_name`**, **`set_code`**, **`collector_number`** as **printed OCR** on the frame — the prompts frame this as strict transcription (title strip, type line), not “guess the famous card from the art.” Instructions are sent **before** the image in the API call; **`ANTHROPIC_TEMPERATURE`** defaults to **`0`** for steadier reads (override in `.env` if needed).
 - When the **type-line set code** and **collector number** are legible, Scryfall can use an exact card URL instead of fuzzy name search.
 - See [`claude_id.py`](claude_id.py) for full prompt text and keys.
+- **If the model is consistently wrong but stable:** the JPEG may be **sideways** (common with a fixed Pi camera). JPEGs are **EXIF-corrected** with Pillow before sending to Claude. If there is still no correct orientation in EXIF, set **`CLAUDE_JPEG_ROTATE`** to **`90`**, **`180`**, or **`270`** (clockwise degrees) in the environment running `app.py` / `claude_id.py`. Disable EXIF correction with **`CLAUDE_AUTO_ORIENT=0`** if it ever makes things worse. Optional **`CLAUDE_JPEG_QUALITY`** (default `92`) when re-encoding after rotation.
 - API key stored in `.env` as `ANTHROPIC_API_KEY`
 
 ### Testing Claude ID
@@ -142,6 +143,7 @@ CREATE TABLE IF NOT EXISTS inventory (
 ```
 ANTHROPIC_API_KEY=your_key_here
 ANTHROPIC_TEMPERATURE=0
+# If titles read sideways in saved JPEGs: CLAUDE_JPEG_ROTATE=90
 SCAN_BUTTON_PIN=17
 CONFIRM_BUTTON_PIN=27
 RESCAN_BUTTON_PIN=22
