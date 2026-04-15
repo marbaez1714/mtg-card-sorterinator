@@ -350,6 +350,8 @@ def oled_run_probe_raw() -> None:
         xfer_cmd(_INIT12864)
         xfer_cmd([0x81, 0xFF])
 
+        hold = float(os.getenv("OLED_PROBE_HOLD_S", "5").strip())
+
         if os.getenv("OLED_PROBE_INVERT", "0").strip() == "1":
             xfer_cmd([0xAF])
             xfer_cmd([0xA7])
@@ -357,6 +359,12 @@ def oled_run_probe_raw() -> None:
                 "[OLED] probe: sent DISPLAYON + INVERT (0xA7). "
                 "The whole panel should look inverted / lit if this is an SSD1306 and DC/SPI/CS are correct."
             )
+            if hold > 0:
+                print(
+                    f"[OLED] probe: holding {hold}s so you can see the pattern "
+                    f"(then GPIO cleanup may dim the panel — set OLED_PROBE_HOLD_S=0 to skip wait)."
+                )
+                time.sleep(hold)
             return
 
         xfer_cmd([0x21, 0x00, 0x7F, 0x22, 0x00, 0x07])
@@ -364,10 +372,15 @@ def oled_run_probe_raw() -> None:
         xfer_cmd([0xAF])
         print(
             "[OLED] probe: raw SSD1306 init + full white framebuffer + DISPLAYON (bypassed luma). "
-            "If this is still black but RPi.GPIO and spidev succeeded, recheck 3.3V/GND, "
-            "MOSI→pin19 SCLK→pin23 CS→CE0 pin24 (or CE1 / OLED_GPIO_CS), DC→BCM24 pin18, "
-            "RES→BCM25 pin22. Some modules are not SSD1306 (need a different driver)."
+            "If you only saw a flash: that was real pixels; cleanup releases SPI/GPIO and can blank the glass. "
+            f"Default wait is {hold}s before cleanup (OLED_PROBE_HOLD_S)."
         )
+        if hold > 0:
+            print(
+                f"[OLED] probe: holding {hold}s — you should see solid white; "
+                "set OLED_PROBE_HOLD_S=0 to skip."
+            )
+            time.sleep(hold)
     finally:
         try:
             if spi is not None:
@@ -449,7 +462,8 @@ def main() -> None:
             "I2C boards: OLED_INTERFACE=i2c\n"
             "Optional: OLED_DEBUG=1  OLED_SPI_HZ=1000000  OLED_DRIVER=sh1106\n"
             "  OLED_GPIO_CS=<BCM> if CS is not on CE0/CE1  OLED_DIAG_FULL=1  OLED_RESET_RELEASE_S=0.15\n"
-            "  OLED_PROBE_INVERT=1 python3 oled.py --probe  (display invert test)",
+            "  OLED_PROBE_INVERT=1 python3 oled.py --probe  (display invert test)\n"
+            "  OLED_PROBE_HOLD_S=5  (default; seconds to keep image before GPIO cleanup)",
             file=sys.stderr,
         )
         sys.exit(2)
