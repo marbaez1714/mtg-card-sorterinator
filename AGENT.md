@@ -1,12 +1,13 @@
 # MTG Card Scanner — Claude Code Context
 
 ## Project Overview
-A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards using the Claude Vision API, fetches card data from Scryfall, and saves results to a local SQLite inventory database. **Headless for now** (no attached screen): feedback via logs, Flask, or the serial/SSH session — no browser, no desktop assumed on the Pi.
+A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards using the Claude Vision API, fetches card data from Scryfall, and saves results to a local SQLite inventory database. **Headless by default** (no browser or desktop): feedback via logs, Flask JSON, SSH, and optionally a small **128×64 I2C OLED** (see [`oled.py`](oled.py)).
 
 ## Hardware
 - **Pi:** Raspberry Pi 4 (2GB)
 - **Camera:** **Raspberry Pi Camera Module 3** (the “Module 3” / IMX708 sensor; standard, not wide-angle). Software is still **`picamera2`** (libcamera) on Raspberry Pi OS — there is no separate `picamera3` Python package; `sudo apt install python3-picamera2` is correct.
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
+- **Display (optional):** **128×64 monochrome OLED** over **I2C** (common **SSD1306** or **SH1106** breakouts; e.g. [Inland 1.3" 128×64 article](https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display) — same wiring class as many 1.5" modules). Software: [`oled.py`](oled.py) using **`luma.oled`**. Enable **`OLED_ENABLED=1`**, set **`OLED_DRIVER`** to **`ssd1306`** or **`sh1106`** if the image is offset or garbled. **DSI / HDMI framebuffer UI** remains deferred.
 
 **Scan quality (accuracy):** Move the camera so the **card fills most of the frame** (if the saved JPEG shows a tiny card on a big desk, OCR will struggle). Use diffuse light (avoid glare on the title) and keep the name line in focus. Picamera2 tuning (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** / **`CAMERA_STILL_SIZE`** (`WxH`; default **`1920x1080`**), **`CAMERA_SETTLE_S`** (seconds after start before capture; default **`0.75`**, raise if color/exposure drifts), **`CAMERA_JPEG_QUALITY`** (default **`82`**, lower = smaller/faster JPEG), **`CAMERA_SKIP_AF=1`** to skip **autofocus** each shot (faster; only if distance is fixed and sharp), **`CAMERA_AF_RANGE`**. For Claude only, **`MTG_CENTER_CROP_RATIO`** in [`claude_id.py`](claude_id.py) for a centered crop before vision.
 
@@ -18,7 +19,8 @@ mtg-scanner/
 ├── claude_id.py     # Claude Vision API call — returns card name + set
 ├── scryfall.py      # Scryfall API wrapper — fetches card data and pricing
 ├── db.py            # SQLite CRUD — inventory read/write
-├── gpio.py          # GPIO button input handler
+├── gpio.py          # GPIO button input handler (planned)
+├── oled.py          # 128x64 I2C OLED status (luma.oled; optional)
 ├── inventory.db     # Auto-created SQLite file (gitignore this)
 ├── .env             # API keys (gitignore this)
 ├── scripts/
@@ -26,7 +28,7 @@ mtg-scanner/
 └── requirements.txt
 ```
 
-*(Deferred: optional `display.py` + DSI framebuffer UI — not in scope until re-enabled.)*
+*(Deferred: optional `display.py` + DSI framebuffer UI — not in scope until re-enabled; use `oled.py` for compact on-device text.)*
 
 ## Key APIs
 
@@ -125,6 +127,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   `python3 app.py`
 
 - **Endpoints:** `GET /api/health` — liveness. `POST /api/identify` — capture → Claude only; returns `{ "vision": { "name", "set_name", "set_code", "collector_number" } }` and does **not** call Scryfall or change **pending**. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
+- **OLED:** With **`OLED_ENABLED=1`**, successful **`/api/scan`** shows the pending match on the display; **`/api/confirm`** shows “Saved”; **`/api/rescan`** shows the idle banner; failed **`/api/identify`**, **`/api/scan`**, or confirm paths show a short error line. Hardware smoke test (Pi, I2C on): `OLED_ENABLED=1 python3 oled.py --test`.
 
 - **Quick terminal testing** (no long `curl` lines): run [`scripts/api.sh`](scripts/api.sh) from the repo root, e.g. `./scripts/api.sh health`, `./scripts/api.sh identify`, `./scripts/api.sh scan`, `./scripts/api.sh confirm`, `./scripts/api.sh inventory 10`. Set **`MTG_API_BASE`** for a remote Pi (e.g. `MTG_API_BASE=http://raspberrypi.local:5000 ./scripts/api.sh scan`). Optional **`MTG_CONFIRM_JSON`** for confirm. Output is passed through **`jq`** if installed, else **`python3 -m json.tool`**.
 
@@ -145,17 +148,26 @@ ANTHROPIC_TEMPERATURE=0
 SCAN_BUTTON_PIN=17
 CONFIRM_BUTTON_PIN=27
 RESCAN_BUTTON_PIN=22
+
+# Optional I2C OLED (see oled.py)
+# OLED_ENABLED=1
+# OLED_I2C_PORT=1
+# OLED_I2C_ADDRESS=0x3C
+# OLED_DRIVER=ssd1306
+# OLED_DRIVER=sh1106
+# OLED_ROTATE=0
 ```
 
 ## Requirements (requirements.txt)
 ```
 flask
-picamera2
 anthropic
-requests
-gpiozero
 python-dotenv
+requests
+Pillow
+luma.oled
 ```
+`picamera2` is **apt-only** on the Pi (see `requirements-pi.txt`). GPIO stack (e.g. `gpiozero`) is not wired in `requirements.txt` until `gpio.py` lands.
 
 ## What To Avoid
 - Do not use Chromium, a browser, or any web-based display
