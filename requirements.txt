@@ -3,7 +3,6 @@ anthropic>=0.25
 python-dotenv>=1.0
 requests>=2.28
 Pillow>=10.0
-luma.oled>=3.0
 # picamera2 is NOT listed here — it is RPi-only and must be installed via:
 #   sudo apt install -y python3-picamera2
 # See requirements-pi.txt

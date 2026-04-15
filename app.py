@@ -15,7 +15,6 @@ from camera import CardCamera
 from claude_id import CardIdentificationError, identify_card_from_jpeg
 from db import InventoryDBError, add_inventory_item, init_db, list_inventory_items
 from scryfall import ScryfallLookupError, lookup_card_from_vision
-from oled import oled_show_error, oled_show_idle, oled_show_pending, oled_show_saved
 
 init_db()
 
@@ -52,10 +51,8 @@ def api_identify() -> Any:
     try:
         vision = _capture_and_identify()
     except CardIdentificationError as e:
-        oled_show_error(str(e))
         return jsonify(error=str(e)), 502
     except Exception as e:
-        oled_show_error(str(e))
         return jsonify(error=str(e)), 500
     return jsonify(vision=vision)
 
@@ -69,20 +66,16 @@ def api_scan() -> Any:
     try:
         vision, sf = _run_scan_pipeline()
     except CardIdentificationError as e:
-        oled_show_error(str(e))
         return jsonify(error=str(e)), 502
     except ScryfallLookupError as e:
         msg = str(e)
         status = 404 if "No card matched" in msg else 502
-        oled_show_error(msg)
         return jsonify(error=msg), status
     except Exception as e:
-        oled_show_error(str(e))
         return jsonify(error=str(e)), 500
 
     with _lock:
         _pending = {"vision": vision, "scryfall": sf}
-    oled_show_pending(vision, sf)
     return jsonify(vision=vision, scryfall=sf)
 
 
@@ -95,14 +88,12 @@ def api_confirm() -> Any:
     try:
         qty = int(raw_qty)
     except (TypeError, ValueError):
-        oled_show_error("quantity must be int")
         return jsonify(error="quantity must be an integer"), 400
     if qty < 1:
         qty = 1
 
     with _lock:
         if _pending is None:
-            oled_show_error("No pending scan")
             return jsonify(error="No pending scan; POST /api/scan first"), 400
         sf = _pending["scryfall"]
 
@@ -123,12 +114,10 @@ def api_confirm() -> Any:
             price_usd=price,
         )
     except InventoryDBError as e:
-        oled_show_error(str(e))
         return jsonify(error=str(e)), 502
 
     with _lock:
         _pending = None
-    oled_show_saved(name)
 
     row: dict[str, Any] | None = None
     for r in list_inventory_items(limit=200):
@@ -155,7 +144,6 @@ def api_rescan() -> Any:
     global _pending
     with _lock:
         _pending = None
-    oled_show_idle()
     return jsonify(ok=True)
 
 

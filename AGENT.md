@@ -1,13 +1,12 @@
 # MTG Card Scanner — Claude Code Context
 
 ## Project Overview
-A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards using the Claude Vision API, fetches card data from Scryfall, and saves results to a local SQLite inventory database. **Headless by default** (no browser or desktop): feedback via logs, Flask JSON, SSH, and optionally a small **128×64 OLED** over **I2C or SPI** (see [`oled.py`](oled.py)).
+A Raspberry Pi-based Magic: The Gathering card scanner that identifies cards using the Claude Vision API, fetches card data from Scryfall, and saves results to a local SQLite inventory database. **Headless for now** (no attached screen): feedback via logs, Flask JSON, or the serial/SSH session — no browser, no desktop assumed on the Pi.
 
 ## Hardware
 - **Pi:** Raspberry Pi 4 (2GB)
 - **Camera:** **Raspberry Pi Camera Module 3** (the “Module 3” / IMX708 sensor; standard, not wide-angle). Software is still **`picamera2`** (libcamera) on Raspberry Pi OS — there is no separate `picamera3` Python package; `sudo apt install python3-picamera2` is correct.
 - **Input:** Physical momentary buttons wired to GPIO pins (no touchscreen)
-- **Display (optional):** **128×64 monochrome OLED** (common **SSD1306** or **SH1106**; e.g. [Inland 1.3" 128×64 article](https://community.microcenter.com/kb/articles/795-inland-1-3-128x64-oled-graphic-display)). **I2C** boards use **SDA/SCL**; **SPI** boards use **CLK, MOSI, CS, DC, RES** plus power. Software: [`oled.py`](oled.py) + **`luma.oled`**. Set **`OLED_ENABLED=1`**; **SPI is the default** (`OLED_INTERFACE` unset or **`spi`**). **I2C-only** boards need **`OLED_INTERFACE=i2c`**. Use **`OLED_DRIVER=ssd1306`** vs **`sh1106`** if the image is wrong. **DSI / HDMI framebuffer UI** remains deferred.
 
 **Scan quality (accuracy):** Move the camera so the **card fills most of the frame** (if the saved JPEG shows a tiny card on a big desk, OCR will struggle). Use diffuse light (avoid glare on the title) and keep the name line in focus. Picamera2 tuning (see [`camera.py`](camera.py)): **`MTG_STILL_SIZE`** / **`CAMERA_STILL_SIZE`** (`WxH`; default **`1920x1080`**), **`CAMERA_SETTLE_S`** (seconds after start before capture; default **`0.75`**, raise if color/exposure drifts), **`CAMERA_JPEG_QUALITY`** (default **`82`**, lower = smaller/faster JPEG), **`CAMERA_SKIP_AF=1`** to skip **autofocus** each shot (faster; only if distance is fixed and sharp), **`CAMERA_AF_RANGE`**. For Claude only, **`MTG_CENTER_CROP_RATIO`** in [`claude_id.py`](claude_id.py) for a centered crop before vision.
 
@@ -20,7 +19,6 @@ mtg-scanner/
 ├── scryfall.py      # Scryfall API wrapper — fetches card data and pricing
 ├── db.py            # SQLite CRUD — inventory read/write
 ├── gpio.py          # GPIO button input handler (planned)
-├── oled.py          # 128x64 OLED status — I2C or SPI (luma.oled; optional)
 ├── inventory.db     # Auto-created SQLite file (gitignore this)
 ├── .env             # API keys (gitignore this)
 ├── scripts/
@@ -28,7 +26,7 @@ mtg-scanner/
 └── requirements.txt
 ```
 
-*(Deferred: optional `display.py` + DSI framebuffer UI — not in scope until re-enabled; use `oled.py` for compact on-device text.)*
+*(Deferred: optional `display.py` + DSI framebuffer UI — not in scope until re-enabled.)*
 
 ## Key APIs
 
@@ -127,7 +125,6 @@ CREATE TABLE IF NOT EXISTS inventory (
   `python3 app.py`
 
 - **Endpoints:** `GET /api/health` — liveness. `POST /api/identify` — capture → Claude only; returns `{ "vision": { "name", "set_name", "set_code", "collector_number" } }` and does **not** call Scryfall or change **pending**. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
-- **OLED:** With **`OLED_ENABLED=1`**, successful **`/api/scan`** shows the pending match on the display; **`/api/confirm`** shows “Saved”; **`/api/rescan`** shows the idle banner; failed **`/api/identify`**, **`/api/scan`**, or confirm paths show a short error line. Hardware smoke test: **`OLED_ENABLED=1 python3 oled.py --test`** (**SPI** default — enable SPI in raspi-config); **I2C** boards set **`OLED_INTERFACE=i2c`**. If the panel stays black, run **`OLED_ENABLED=1 python3 oled.py --diag`**. Use **`OLED_DEBUG=1`** for init logging; try **`OLED_SPI_HZ=1000000`** or **`OLED_DRIVER=sh1106`** if wiring is correct but the image is wrong.
 
 - **Quick terminal testing** (no long `curl` lines): run [`scripts/api.sh`](scripts/api.sh) from the repo root, e.g. `./scripts/api.sh health`, `./scripts/api.sh identify`, `./scripts/api.sh scan`, `./scripts/api.sh confirm`, `./scripts/api.sh inventory 10`. Set **`MTG_API_BASE`** for a remote Pi (e.g. `MTG_API_BASE=http://raspberrypi.local:5000 ./scripts/api.sh scan`). Optional **`MTG_CONFIRM_JSON`** for confirm. Output is passed through **`jq`** if installed, else **`python3 -m json.tool`**.
 
@@ -148,33 +145,7 @@ ANTHROPIC_TEMPERATURE=0
 SCAN_BUTTON_PIN=17
 CONFIRM_BUTTON_PIN=27
 RESCAN_BUTTON_PIN=22
-
-# Optional OLED (see oled.py)
-# OLED_ENABLED=1
-# OLED_INTERFACE=spi
-# OLED_INTERFACE=i2c
-# OLED_I2C_PORT=1
-# OLED_I2C_ADDRESS=0x3C
-# OLED_SPI_PORT=0
-# OLED_SPI_DEVICE=0
-# OLED_GPIO_DC=24
-# OLED_GPIO_RST=25
-# OLED_SPI_HZ=1000000
-# OLED_GPIO_CS=5
-# OLED_RESET_HOLD_S=0.002
-# OLED_RESET_RELEASE_S=0.05
-# OLED_DRIVER=ssd1306
-# OLED_DRIVER=sh1106
-# OLED_ROTATE=0
-# OLED_GPIO_RST=none
-# OLED_DIAG_FULL=1
 ```
-
-**SPI OLED → Pi (SPI0, matches `oled.py` defaults):** **GND** → GND (e.g. pin 6); **VCC** → **5V (pin 2 or 4)** or **3.3V (pin 1 or 17)** per your module’s silkscreen/docs (many 128×64 SPI breakouts use **5V** on **VCC** with level shifting for logic); **CLK** → **GPIO11** / SCLK (pin 23); **MOSI** → **GPIO10** / MOSI (pin 19); **CS** → **GPIO8** / **CE0** (pin 24) — leave **`OLED_GPIO_CS` unset** (hardware CE); **DC** → **GPIO24** (pin 18); **RES** → **GPIO25** (pin 22). If **CS** goes to **CE1** (GPIO7, pin 26) instead, set **`OLED_SPI_DEVICE=1`**. Only set **`OLED_GPIO_CS=<BCM>`** when **CS** is on a **GPIO other than CE0/CE1** (never set **`OLED_GPIO_CS=8`** while using SPI0 CE0 — that fights the kernel driver). **`OLED_GPIO_RST=none`** only if the PCB ties reset high. Default SPI clock is **1 MHz** (`OLED_SPI_HZ`); increase (e.g. **4000000**) only if wiring is very short and stable. **`OLED_RESET_RELEASE_S`** (default **0.05**) can be raised (e.g. **0.15**) for fussy modules.
-
-**Still a black screen (init succeeds, no errors):** Run **`OLED_ENABLED=1 python3 oled.py --diag`** and read the **RPi.GPIO** line — on **Pi 5** / newer Bookworm, install **`rpi-lgpio`** (`pip install rpi-lgpio`) so **DC/RST** can toggle. Try **`OLED_DIAG_FULL=1`** with **`--diag`** (entire panel white). Try **`OLED_DRIVER=sh1106`**, **`OLED_SPI_HZ=1000000`**, **`OLED_RESET_RELEASE_S=0.15`**, and re-check **CS** (CE0 vs CE1 vs **`OLED_GPIO_CS`**). Last resort: **`OLED_ENABLED=1 python3 oled.py --probe`** bypasses luma and drives an **SSD1306** over **spidev** + **RPi.GPIO**; **`OLED_PROBE_INVERT=1`** with **`--probe`** only sends **DISPLAYON + invert** (very obvious if the controller is SSD1306-class). If you only see a **quick flash**, the panel **did** update — **`GPIO.cleanup()`** at the end releases pins and can blank it; use **`OLED_PROBE_HOLD_S`** (default **5** seconds) to **hold the image** before cleanup so you can confirm steady white or invert.
-
-**Solid white / wrong pattern with luma:** The SSD1306 can sit in **“entire display ON”** (command **0xA5**, ignores RAM — everything looks lit). **`oled.py`** sends **0xA4** (resume RAM) and **0xA6** (normal) before and after each draw, and uses **`canvas`** for a **black screen + white square** (defaults: **`OLED_PATTERN=square`**, **`OLED_SQUARE=32`**). If the panel is still a uniform wash, try **`OLED_PATTERN=invert`** (white field + **black** square) or **`OLED_PATTERN=dot`** (single pixel). Still wrong → **`OLED_DRIVER=sh1106`**.
 
 ## Requirements (requirements.txt)
 ```
@@ -183,7 +154,6 @@ anthropic
 python-dotenv
 requests
 Pillow
-luma.oled
 ```
 `picamera2` is **apt-only** on the Pi (see `requirements-pi.txt`). GPIO stack (e.g. `gpiozero`) is not wired in `requirements.txt` until `gpio.py` lands.
 
