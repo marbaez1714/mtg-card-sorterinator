@@ -1,5 +1,5 @@
 """
-128x64 monochrome OLED via luma.oled — **SPI** (default) or **I2C**. On-screen output is a **simple centered square** (no text) until you extend `_draw_square` / `oled_show_lines`.
+128x64 monochrome OLED via luma.oled — **SPI** (default) or **I2C**. Test UI is a **square / dot** pattern (`OLED_PATTERN`, `OLED_SQUARE`); forces **0xA4/0xA6** so RAM is not ignored (see `_oled_force_follow_ram`).
 
 Requires: pip install luma.oled
 Pi SPI: raspi-config → enable SPI; GPIO defaults in _lazy_device (override with OLED_GPIO_*).
@@ -16,7 +16,7 @@ import glob
 import os
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageFont
 
 _STATE: str = "uninit"  # uninit | ready | failed
 _DEVICE: Any = None
@@ -158,6 +158,22 @@ def _lazy_device() -> Any:
         return None
 
 
+def _oled_force_follow_ram(dev: Any) -> None:
+    """Exit SSD1306 'entire display ON' (0xA5): follow GDDRAM again (0xA4) + normal segment polarity (0xA6)."""
+    const = getattr(dev, "_const", None)
+    try:
+        if const is not None and hasattr(const, "DISPLAYALLON_RESUME"):
+            dev.command(const.DISPLAYALLON_RESUME)
+        else:
+            dev.command(0xA4)
+        if const is not None and hasattr(const, "NORMALDISPLAY"):
+            dev.command(const.NORMALDISPLAY)
+        else:
+            dev.command(0xA6)
+    except Exception as e:
+        _oled_debug(f"follow-ram: {e}")
+
+
 def _draw_square() -> None:
     global _STUCK_LOGGED
     dev = _lazy_device()
@@ -174,31 +190,34 @@ def _draw_square() -> None:
         if hasattr(dev, "contrast"):
             dev.contrast(0xFF)
 
-        # Leave "entire display ON" (0xA5) / test modes — shows all pixels lit regardless of RAM.
-        const = getattr(dev, "_const", None)
-        try:
-            if const is not None:
-                if hasattr(const, "DISPLAYALLON_RESUME"):
-                    dev.command(const.DISPLAYALLON_RESUME)
-                if hasattr(const, "NORMALDISPLAY"):
-                    dev.command(const.NORMALDISPLAY)
-        except Exception as e:
-            _oled_debug(f"DISPLAYALLON_RESUME/NORMALDISPLAY: {e}")
+        _oled_force_follow_ram(dev)
 
-        mode = dev.mode
         w, h = dev.size
-        im = Image.new(mode, (w, h), 0)
-        dr = ImageDraw.Draw(im)
         try:
-            sq = int(os.getenv("OLED_SQUARE", "40").strip())
+            sq = int(os.getenv("OLED_SQUARE", "32").strip())
         except ValueError:
-            sq = 40
-        sq = max(8, min(sq, w - 4, h - 4))
+            sq = 32
+        sq = max(4, min(sq, w - 4, h - 4))
         x0 = (w - sq) // 2
         y0 = (h - sq) // 2
-        dr.rectangle((x0, y0, x0 + sq - 1, y0 + sq - 1), fill=255)
+        pat = os.getenv("OLED_PATTERN", "square").strip().lower()
 
-        dev.display(im)
+        from luma.core.render import canvas
+
+        with canvas(dev) as draw:
+            if pat in ("invert", "inv"):
+                # White field, black square — if you see a dark box, RAM polarity is fine.
+                draw.rectangle((0, 0, w - 1, h - 1), fill="white")
+                draw.rectangle((x0, y0, x0 + sq - 1, y0 + sq - 1), fill="black")
+            elif pat == "dot":
+                cx, cy = w // 2, h // 2
+                draw.rectangle((0, 0, w - 1, h - 1), fill="black")
+                draw.rectangle((cx, cy, cx, cy), fill="white")
+            else:
+                draw.rectangle((0, 0, w - 1, h - 1), fill="black")
+                draw.rectangle((x0, y0, x0 + sq - 1, y0 + sq - 1), fill="white")
+
+        _oled_force_follow_ram(dev)
         if hasattr(dev, "show"):
             dev.show()
     except Exception as e:
@@ -415,6 +434,7 @@ def oled_run_diag() -> None:
         sys.exit(1)
     try:
         dev.contrast(0xFF)
+        _oled_force_follow_ram(dev)
         from luma.core.render import canvas
 
         font = ImageFont.load_default()
@@ -427,6 +447,7 @@ def oled_run_diag() -> None:
                 draw.rectangle((0, 0, 127, 63), outline="white", width=2)
                 draw.rectangle((24, 20, 103, 44), fill="white")
                 draw.text((32, 28), "DIAG", font=font, fill="black")
+        _oled_force_follow_ram(dev)
         if hasattr(dev, "show"):
             dev.show()
     except Exception as e:
@@ -467,7 +488,9 @@ def main() -> None:
             "  OLED_GPIO_CS=<BCM> if CS is not on CE0/CE1  OLED_DIAG_FULL=1  OLED_RESET_RELEASE_S=0.15\n"
             "  OLED_PROBE_INVERT=1 python3 oled.py --probe  (display invert test)\n"
             "  OLED_PROBE_HOLD_S=5  (default; seconds to keep image before GPIO cleanup)\n"
-            "  OLED_TEST_HOLD_S=5   (default for --test; seconds before exit)",
+            "  OLED_TEST_HOLD_S=5   (default for --test; seconds before exit)\n"
+            "  OLED_PATTERN=invert  (white screen + black square — if uniform white, try this)\n"
+            "  OLED_PATTERN=dot     (single lit pixel in center)",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -494,7 +517,10 @@ def main() -> None:
             flush=True,
         )
         time.sleep(hold)
-    print("Drew centered white square (OLED_SQUARE px, default 40).", flush=True)
+    print(
+        "Drew test pattern (OLED_PATTERN=square|invert|dot, OLED_SQUARE default 32).",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
