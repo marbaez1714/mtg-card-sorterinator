@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   Use `python3` / `pip` only while the venv is activated (or run tools as `.venv/bin/python`). On Windows: `.venv\Scripts\activate`.
 - **Dev machine:** All development happens on a separate computer. The Pi is the deploy target only.
 - **No desktop on Pi:** Do not assume X11, Wayland, or a browser is available.
-- **Camera:** [`camera.py`](camera.py) targets **Camera Module 3** via **`picamera2`** on the Pi. Use ``python3 test_camera.py`` on the device to verify capture; for Claude tests off the Pi, run ``claude_id.py`` on a JPEG saved from the camera.
+- **Camera:** [`camera.py`](camera.py) targets **Camera Module 3** via **`picamera2`** on the Pi. Install with ``sudo apt install -y python3-picamera2 python3-libcamera``. **Venv note:** a normal venv cannot import apt-only packages. Either create the venv with ``python3 -m venv .venv --system-site-packages`` (then ``pip install -r requirements.txt`` again), or run camera code with **system** Python: ``/usr/bin/python3 test_camera.py``. Verify: ``python3 -c 'from picamera2 import Picamera2'``. For Claude-only work off the Pi, use ``claude_id.py`` on a JPEG saved from the camera.
 - **Deployment:** rsync or `scp` to Pi, run via a systemd service on boot.
 
 ### Running the Flask app (headless API)

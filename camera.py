@@ -109,7 +109,15 @@ def CardCamera(jpeg_quality: int = 90):
     """
     if Picamera2 is None:
         raise RuntimeError(
-            "picamera2 is not installed or not importable. "
-            "On Raspberry Pi OS: sudo apt install -y python3-picamera2 python3-libcamera"
+            "picamera2 is not installed or not importable.\n"
+            "  • On Raspberry Pi OS: sudo apt update && "
+            "sudo apt install -y python3-picamera2 python3-libcamera\n"
+            "  • If you use a venv, it hides apt packages unless the venv was created with "
+            "--system-site-packages, e.g.:\n"
+            "      python3 -m venv .venv --system-site-packages\n"
+            "      source .venv/bin/activate && pip install -r requirements.txt\n"
+            "    Or run camera scripts with system Python: /usr/bin/python3 test_camera.py\n"
+            "  • picamera2 only exists on Raspberry Pi OS (not macOS/Windows).\n"
+            "  • Quick check: python3 -c \"from picamera2 import Picamera2\""
         )
     return _RealCardCamera(jpeg_quality)
