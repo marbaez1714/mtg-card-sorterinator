@@ -102,8 +102,8 @@ def _lazy_device() -> Any:
             gpio_dc = int(os.getenv("OLED_GPIO_DC", "24").strip())
             gpio_rst = _env_rst_gpio()
             gpio_cs = _env_optional_int("OLED_GPIO_CS")
-            # 4 MHz default — dupont wires often glitch at 8 MHz on some modules.
-            bus_hz = int(os.getenv("OLED_SPI_HZ", "4000000").strip())
+            # Default 1 MHz — matches raw --probe default; raise (e.g. 4_000_000) if wiring is short/clean.
+            bus_hz = int(os.getenv("OLED_SPI_HZ", "1000000").strip())
             rst_hold = float(os.getenv("OLED_RESET_HOLD_S", "0.002").strip())
             rst_release = float(os.getenv("OLED_RESET_RELEASE_S", "0.05").strip())
             spi_kw: dict[str, Any] = dict(
@@ -185,12 +185,16 @@ def _draw(lines: list[str]) -> None:
     try:
         from luma.core.render import canvas
 
+        if hasattr(dev, "contrast"):
+            dev.contrast(0xFF)
         font = ImageFont.load_default()
         with canvas(dev) as draw:
             y = 0
             for line in lines[:6]:
                 draw.text((0, y), line[:32], font=font, fill="white")
                 y += 11
+        if hasattr(dev, "show"):
+            dev.show()
     except Exception as e:
         print(f"[OLED] draw failed: {e}")
 
@@ -446,6 +450,13 @@ def oled_run_diag() -> None:
 
 def main() -> None:
     import sys
+
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
 
     if "--diag" in sys.argv:
         oled_run_diag()
