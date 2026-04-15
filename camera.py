@@ -9,7 +9,7 @@ except ImportError:
 
 
 def _still_size() -> tuple[int, int]:
-    """Optional MTG_STILL_SIZE or CAMERA_STILL_SIZE as WxH (e.g. 3280x2464)."""
+    """Optional MTG_STILL_SIZE or CAMERA_STILL_SIZE as WxH (e.g. 3280x2464 for max detail)."""
     raw = (os.getenv("MTG_STILL_SIZE") or os.getenv("CAMERA_STILL_SIZE") or "").strip().lower()
     if raw and "x" in raw:
         try:
@@ -19,9 +19,8 @@ def _still_size() -> tuple[int, int]:
                 return (w, h)
         except ValueError:
             pass
-    # Default ~8MP 4:3 — more pixels on the title than 2304x1296 when the card is far away.
-    # On Pi 4 2GB, if you see OOM, set MTG_STILL_SIZE=2304x1296 (or lower).
-    return (3280, 2464)
+    # Default 1080p — faster capture/encode than full sensor; raise MTG_STILL_SIZE if OCR needs more pixels.
+    return (1920, 1080)
 
 
 def _af_range() -> int:
