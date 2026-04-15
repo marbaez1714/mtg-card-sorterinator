@@ -1,5 +1,5 @@
 """
-128x64 monochrome OLED via luma.oled — **SPI** (default: CLK/MOSI/CS/DC/RES) or **I2C** (SDA/SCL).
+128x64 monochrome OLED via luma.oled — **SPI** (default) or **I2C**. On-screen output is a **simple centered square** (no text) until you extend `_draw_square` / `oled_show_lines`.
 
 Requires: pip install luma.oled
 Pi SPI: raspi-config → enable SPI; GPIO defaults in _lazy_device (override with OLED_GPIO_*).
@@ -158,35 +158,7 @@ def _lazy_device() -> Any:
         return None
 
 
-def _fit_lines(text: str, width: int = 21, max_lines: int = 6) -> list[str]:
-    t = " ".join((text or "?").split())
-    out: list[str] = []
-    while t and len(out) < max_lines:
-        line = t[:width].rstrip()
-        if not line:
-            line = t[:width]
-        out.append(line if line else "?")
-        t = t[len(line) :].lstrip()
-    return out if out else ["?"]
-
-
-def _oled_font() -> Any:
-    """Prefer a small TrueType font on the Pi; fallback to PIL default (very small)."""
-    px = int(os.getenv("OLED_FONT_PX", "14").strip())
-    for path in (
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-    ):
-        if os.path.isfile(path):
-            try:
-                return ImageFont.truetype(path, px)
-            except OSError:
-                continue
-    return ImageFont.load_default()
-
-
-def _draw(lines: list[str]) -> None:
+def _draw_square() -> None:
     global _STUCK_LOGGED
     dev = _lazy_device()
     if dev is None:
@@ -217,26 +189,14 @@ def _draw(lines: list[str]) -> None:
         w, h = dev.size
         im = Image.new(mode, (w, h), 0)
         dr = ImageDraw.Draw(im)
-        dr.rectangle((0, 0, w - 1, h - 1), outline=255, width=1)
-        font = _oled_font()
         try:
-            line_h = int(os.getenv("OLED_LINE_H", "0").strip())
+            sq = int(os.getenv("OLED_SQUARE", "40").strip())
         except ValueError:
-            line_h = 0
-        if line_h <= 0:
-            try:
-                bbox = dr.textbbox((0, 0), "Ay", font=font)
-                line_h = max(12, bbox[3] - bbox[1] + 4)
-            except Exception:
-                line_h = 16
-        y = 2
-        for line in lines[:6]:
-            if y + line_h > h:
-                break
-            s = line[:48]
-            for ox, oy in ((0, 0), (1, 0), (0, 1), (1, 1)):
-                dr.text((3 + ox, y + oy), s, font=font, fill=255)
-            y += line_h
+            sq = 40
+        sq = max(8, min(sq, w - 4, h - 4))
+        x0 = (w - sq) // 2
+        y0 = (h - sq) // 2
+        dr.rectangle((x0, y0, x0 + sq - 1, y0 + sq - 1), fill=255)
 
         dev.display(im)
         if hasattr(dev, "show"):
@@ -257,41 +217,27 @@ def oled_clear() -> None:
 
 
 def oled_show_lines(lines: list[str]) -> None:
-    """Show up to ~6 lines of ASCII-ish text (128x64, default font). Never raises."""
+    """Draw a centered white square on black (`lines` is ignored; kept for API compatibility)."""
     try:
-        flat: list[str] = []
-        for block in lines:
-            flat.extend(_fit_lines(block, width=21, max_lines=6))
-        _draw(flat[:6])
+        _draw_square()
     except Exception as e:
         print(f"[OLED] show_lines failed: {e}")
 
 
 def oled_show_idle() -> None:
-    oled_show_lines(["MTG scanner", "Ready", "", "POST /scan"])
+    oled_show_lines([])
 
 
-def oled_show_pending(vision: dict[str, Any], scryfall: dict[str, Any]) -> None:
-    name = (scryfall.get("name") or vision.get("name") or "?") or "?"
-    set_code = scryfall.get("set_code") or "--"
-    price = scryfall.get("price_usd")
-    if price is None:
-        price_s = "$--"
-    else:
-        try:
-            price_s = f"${float(price):.2f}"
-        except (TypeError, ValueError):
-            price_s = str(price)
-    lines = ["Match:", name, f"set {set_code}", price_s, "", "Confirm=save"]
-    oled_show_lines(lines)
+def oled_show_pending(_vision: dict[str, Any], _scryfall: dict[str, Any]) -> None:
+    oled_show_lines([])
 
 
-def oled_show_saved(name: str) -> None:
-    oled_show_lines(["Saved", name[:42], "", "Scan next card"])
+def oled_show_saved(_name: str) -> None:
+    oled_show_lines([])
 
 
-def oled_show_error(message: str) -> None:
-    oled_show_lines(["Error", message[:63]])
+def oled_show_error(_message: str) -> None:
+    oled_show_lines([])
 
 
 def oled_run_probe_raw() -> None:
@@ -540,16 +486,15 @@ def main() -> None:
         )
         sys.exit(1)
 
-    oled_show_lines(["Hello world"])
+    oled_show_lines([])
     hold = float(os.getenv("OLED_TEST_HOLD_S", "5").strip())
     if hold > 0:
         print(
-            f"[OLED] --test: holding {hold}s so you can read the screen "
-            f"(same idea as --probe; set OLED_TEST_HOLD_S=0 for instant exit).",
+            f"[OLED] --test: holding {hold}s (set OLED_TEST_HOLD_S=0 for instant exit).",
             flush=True,
         )
         time.sleep(hold)
-    print("Wrote 'Hello world' to OLED (if wired correctly).", flush=True)
+    print("Drew centered white square (OLED_SQUARE px, default 40).", flush=True)
 
 
 if __name__ == "__main__":

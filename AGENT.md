@@ -174,7 +174,7 @@ RESCAN_BUTTON_PIN=22
 
 **Still a black screen (init succeeds, no errors):** Run **`OLED_ENABLED=1 python3 oled.py --diag`** and read the **RPi.GPIO** line — on **Pi 5** / newer Bookworm, install **`rpi-lgpio`** (`pip install rpi-lgpio`) so **DC/RST** can toggle. Try **`OLED_DIAG_FULL=1`** with **`--diag`** (entire panel white). Try **`OLED_DRIVER=sh1106`**, **`OLED_SPI_HZ=1000000`**, **`OLED_RESET_RELEASE_S=0.15`**, and re-check **CS** (CE0 vs CE1 vs **`OLED_GPIO_CS`**). Last resort: **`OLED_ENABLED=1 python3 oled.py --probe`** bypasses luma and drives an **SSD1306** over **spidev** + **RPi.GPIO**; **`OLED_PROBE_INVERT=1`** with **`--probe`** only sends **DISPLAYON + invert** (very obvious if the controller is SSD1306-class). If you only see a **quick flash**, the panel **did** update — **`GPIO.cleanup()`** at the end releases pins and can blank it; use **`OLED_PROBE_HOLD_S`** (default **5** seconds) to **hold the image** before cleanup so you can confirm steady white or invert.
 
-**Solid white / no text with luma:** Some modules were left in **“entire display ON”** (ignore RAM). **`oled.py`** now sends **DISPLAYALLON_RESUME + NORMALDISPLAY** before each draw, builds the framebuffer with **`dev.display()`** (not only the canvas helper), and uses **DejaVu** (if installed) for larger text. If it is still wrong, try **`OLED_DRIVER=sh1106`**.
+**Solid white / wrong pattern with luma:** Some modules were left in **“entire display ON”** (ignore RAM). **`oled.py`** sends **DISPLAYALLON_RESUME + NORMALDISPLAY** before each update and paints a **centered white square** on black via **`dev.display()`** (side length **`OLED_SQUARE`**, default **40** px). If it is still wrong, try **`OLED_DRIVER=sh1106`**.
 
 ## Requirements (requirements.txt)
 ```
