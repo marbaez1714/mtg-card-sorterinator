@@ -16,7 +16,7 @@ import glob
 import os
 from typing import Any
 
-from PIL import ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 _STATE: str = "uninit"  # uninit | ready | failed
 _DEVICE: Any = None
@@ -170,6 +170,22 @@ def _fit_lines(text: str, width: int = 21, max_lines: int = 6) -> list[str]:
     return out if out else ["?"]
 
 
+def _oled_font() -> Any:
+    """Prefer a small TrueType font on the Pi; fallback to PIL default (very small)."""
+    px = int(os.getenv("OLED_FONT_PX", "14").strip())
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+    ):
+        if os.path.isfile(path):
+            try:
+                return ImageFont.truetype(path, px)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
 def _draw(lines: list[str]) -> None:
     global _STUCK_LOGGED
     dev = _lazy_device()
@@ -183,19 +199,46 @@ def _draw(lines: list[str]) -> None:
             _STUCK_LOGGED = True
         return
     try:
-        from luma.core.render import canvas
-
         if hasattr(dev, "contrast"):
             dev.contrast(0xFF)
-        font = ImageFont.load_default()
-        # Black field + white text (default font is tiny; a full white wash drowns glyphs).
-        with canvas(dev) as draw:
-            draw.rectangle((0, 0, 127, 63), fill="black")
-            draw.rectangle((0, 0, 127, 63), outline="white", width=1)
-            y = 0
-            for line in lines[:6]:
-                draw.text((0, y), line[:32], font=font, fill="white")
-                y += 11
+
+        # Leave "entire display ON" (0xA5) / test modes — shows all pixels lit regardless of RAM.
+        const = getattr(dev, "_const", None)
+        try:
+            if const is not None:
+                if hasattr(const, "DISPLAYALLON_RESUME"):
+                    dev.command(const.DISPLAYALLON_RESUME)
+                if hasattr(const, "NORMALDISPLAY"):
+                    dev.command(const.NORMALDISPLAY)
+        except Exception as e:
+            _oled_debug(f"DISPLAYALLON_RESUME/NORMALDISPLAY: {e}")
+
+        mode = dev.mode
+        w, h = dev.size
+        im = Image.new(mode, (w, h), 0)
+        dr = ImageDraw.Draw(im)
+        dr.rectangle((0, 0, w - 1, h - 1), outline=255, width=1)
+        font = _oled_font()
+        try:
+            line_h = int(os.getenv("OLED_LINE_H", "0").strip())
+        except ValueError:
+            line_h = 0
+        if line_h <= 0:
+            try:
+                bbox = dr.textbbox((0, 0), "Ay", font=font)
+                line_h = max(12, bbox[3] - bbox[1] + 4)
+            except Exception:
+                line_h = 16
+        y = 2
+        for line in lines[:6]:
+            if y + line_h > h:
+                break
+            s = line[:48]
+            for ox, oy in ((0, 0), (1, 0), (0, 1), (1, 1)):
+                dr.text((3 + ox, y + oy), s, font=font, fill=255)
+            y += line_h
+
+        dev.display(im)
         if hasattr(dev, "show"):
             dev.show()
     except Exception as e:
