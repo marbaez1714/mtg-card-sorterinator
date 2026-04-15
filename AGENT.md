@@ -21,6 +21,8 @@ mtg-scanner/
 ├── gpio.py          # GPIO button input handler
 ├── inventory.db     # Auto-created SQLite file (gitignore this)
 ├── .env             # API keys (gitignore this)
+├── scripts/
+│   └── api.sh       # Short commands to hit the Flask API (see Running the Flask app)
 └── requirements.txt
 ```
 
@@ -121,6 +123,8 @@ CREATE TABLE IF NOT EXISTS inventory (
   `python3 app.py`
 
 - **Endpoints:** `GET /api/health` — liveness. `POST /api/identify` — capture → Claude only; returns `{ "vision": { "name", "set_name", "set_code", "collector_number" } }` and does **not** call Scryfall or change **pending**. `POST /api/scan` — capture → Claude → Scryfall; returns `{ "vision", "scryfall" }` and stores a single **pending** match for confirm. `POST /api/confirm` — optional JSON body `{"foil": false, "quantity": 1}`; writes one inventory row; clears pending. `POST /api/rescan` — clears pending without saving. `GET /api/inventory?limit=50` — recent rows (limit capped at 200).
+
+- **Quick terminal testing** (no long `curl` lines): run [`scripts/api.sh`](scripts/api.sh) from the repo root, e.g. `./scripts/api.sh health`, `./scripts/api.sh identify`, `./scripts/api.sh scan`, `./scripts/api.sh confirm`, `./scripts/api.sh inventory 10`. Set **`MTG_API_BASE`** for a remote Pi (e.g. `MTG_API_BASE=http://raspberrypi.local:5000 ./scripts/api.sh scan`). Optional **`MTG_CONFIRM_JSON`** for confirm. Output is passed through **`jq`** if installed, else **`python3 -m json.tool`**.
 
 - **Example curl** (from another machine, replace host):
 
